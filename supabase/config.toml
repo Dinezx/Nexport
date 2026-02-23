@@ -1,0 +1,4 @@
+# Supabase Edge Function configuration
+# Make ai-chat callable without JWT verification
+[functions.ai-chat]
+verify_jwt = false

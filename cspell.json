@@ -1,0 +1,33 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/*.lock",
+    "**/bun.lockb",
+    "**/src/pages/Booking.tsx",
+    "**/ADVANCED_FEATURES.md",
+    "**/SETUP_GUIDE.md",
+    "**/QUICK_FIX.md",
+    "**/setup-advanced.sh"
+  ],
+  "words": [
+    "apikey",
+    "cspell",
+    "deno",
+    "Deno",
+    "mistralai",
+    "Mixtral",
+    "openchat",
+    "NEXPORT",
+    "NEXU",
+    "PGRST",
+    "plpgsql",
+    "supabase",
+    "Supabase",
+    "Vercel",
+    "websearch"
+  ]
+}
