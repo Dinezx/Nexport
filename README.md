@@ -1,73 +1,153 @@
-# Welcome to your Lovable project
+# Nexport — Logistics & Container Booking Platform
 
-## Project info
+Nexport is a full-stack logistics platform that connects **exporters** with **container providers** for seamless container booking, real-time shipment tracking, and secure payments.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+![React](https://img.shields.io/badge/React-18-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Supabase](https://img.shields.io/badge/Supabase-Backend-green) ![Razorpay](https://img.shields.io/badge/Razorpay-Payments-blueviolet) ![Vite](https://img.shields.io/badge/Vite-5-yellow)
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## Features
 
-**Use Lovable**
+### For Exporters
+- **Container Search & Booking** — Browse available containers by route, type (Dry/Reefer/Normal), and size (20ft/40ft). Book full or partial container space.
+- **AI-Powered ETA & Delay Risk** — Get intelligent estimated delivery times and delay risk predictions using Supabase Edge Functions.
+- **Razorpay Payment Gateway** — Secure payments via UPI, Card, and Netbanking (Razorpay test mode integrated).
+- **Real-Time Shipment Tracking** — Live map tracking with Leaflet, geocoded routes, and a step-by-step tracking timeline.
+- **In-App Messaging** — Chat with container providers directly from the booking, with AI-powered assistance.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### For Providers
+- **Container Management** — Add, edit, and delete containers with full control over type, size, space, origin, destination, and transport mode.
+- **Booking Overview** — View all bookings made on your containers.
+- **Manual Tracking Updates** — Update booking status and add tracking events (Picked Up, In Transit, At Customs, Delivered, etc.) that exporters see in real time.
+- **Live GPS Updates** — Share your current geolocation so exporters can track shipments on a live map.
+- **Exporter Chat** — Communicate with exporters directly per booking.
 
-Changes made via Lovable will be committed automatically to this repo.
+### For Admins
+- **Admin Dashboard** — Overview of platform activity, users, bookings, and providers.
 
-**Use your preferred IDE**
+---
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Tech Stack
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18, TypeScript, Vite |
+| UI | Tailwind CSS, shadcn/ui, Radix UI |
+| Backend | Supabase (PostgreSQL, Auth, RLS, Edge Functions) |
+| Payments | Razorpay Checkout (Test Mode) |
+| Maps | Leaflet + OpenStreetMap + Nominatim Geocoding |
+| AI/ML | Supabase Edge Functions (ETA, Delay Risk, Chat) |
+| State | React Context, React Hooks |
 
-Follow these steps:
+---
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## Getting Started
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### Prerequisites
+- Node.js 18+ (or Bun)
+- A Supabase project
+- Razorpay test account (optional, for payments)
 
-# Step 3: Install the necessary dependencies.
-npm i
+### Installation
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+# Clone the repository
+git clone https://github.com/Dinezx/Nexport.git
+cd Nexport
+
+# Install dependencies
+npm install
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your Supabase and Razorpay keys
+
+# Start the development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Environment Variables
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Create a `.env` file in the root:
 
-**Use GitHub Codespaces**
+```env
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxx
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+> **Note:** Never commit your `.env` file. The Razorpay Key Secret should only be used server-side.
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+## Project Structure
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+```
+src/
+├── components/       # Reusable UI components (layout, shared, ui)
+├── context/          # Auth context provider
+├── hooks/            # Custom React hooks
+├── lib/              # Utilities, constants, Supabase client
+├── pages/            # All page components
+│   ├── Booking.tsx           # Container search & booking
+│   ├── ExporterBookings.tsx  # Exporter's booking list + Razorpay pay
+│   ├── ExporterDashboard.tsx # Exporter dashboard
+│   ├── ProviderBookings.tsx  # Provider's booking list
+│   ├── ProviderContainers.tsx # Container CRUD management
+│   ├── ProviderTracking.tsx  # Manual tracking updates & GPS
+│   ├── Tracking.tsx          # Live shipment tracking map
+│   ├── Chat.tsx              # In-app messaging
+│   └── ...
+├── services/         # API service layer
+│   ├── bookingService.ts
+│   ├── paymentService.ts    # Razorpay checkout integration
+│   ├── trackingService.ts
+│   ├── chatService.ts
+│   └── containerService.ts
+supabase/
+├── migrations/       # Database schema & RLS policies
+└── functions/        # Edge Functions (AI chat, ETA, delay risk)
+```
 
-## How can I deploy this project?
+---
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## User Roles
 
-## Can I connect a custom domain to my Lovable project?
+| Role | Access |
+|------|--------|
+| **Exporter** | Book containers, make payments, track shipments, chat with providers |
+| **Provider** | Manage containers, update tracking, share GPS, chat with exporters |
+| **Admin** | Platform overview and management |
 
-Yes, you can!
+---
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Payment Integration
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Nexport uses **Razorpay** in test mode. When clicking "Pay Now" on a booking, the Razorpay checkout popup opens with options for UPI, Card, and Netbanking.
+
+**Test Credentials:**
+- **Card:** `5267 3181 8797 5449` (any future expiry, any CVV)
+- **UPI:** `success@razorpay`
+- **Netbanking:** Select any bank → click "Success"
+
+---
+
+## Scripts
+
+```bash
+npm run dev       # Start dev server
+npm run build     # Production build
+npm run preview   # Preview production build
+npm run test      # Run tests
+npm run lint      # Lint code
+```
+
+---
+
+## License
+
+This project is private and proprietary.
+
+---
+
+Built with ❤️ by [Dinesh Kumar](https://github.com/Dinezx)

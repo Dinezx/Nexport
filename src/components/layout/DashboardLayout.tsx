@@ -32,7 +32,8 @@ const exporterLinks = [
 
 const providerLinks = [
   { label: "Dashboard", href: "/provider/dashboard", icon: LayoutDashboard },
-  { label: "Shipments", href: "/provider/shipments", icon: Truck },
+  { label: "Bookings", href: "/provider/bookings", icon: FileText },
+  { label: "Containers", href: "/provider-containers", icon: Package },
   { label: "Messages", href: "/chat", icon: MessageSquare },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

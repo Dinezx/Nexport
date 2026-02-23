@@ -10,7 +10,15 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, MapPin, ArrowRight, MessageSquare } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import {
+  openRazorpayCheckout,
+  recordPayment,
+  markBookingPaid,
+  createTrackingEvents,
+  ensureConversation,
+} from "@/services/paymentService";
 
 /* ---------------- Types ---------------- */
 
@@ -34,6 +42,10 @@ export default function ExporterBookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState("");
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   /* ---------------- Fetch Bookings ---------------- */
 
@@ -48,6 +60,8 @@ export default function ExporterBookings() {
           setError("User not authenticated");
           return;
         }
+
+        setUserEmail(user.email ?? "");
 
         const { data, error } = await supabase
           .from("bookings")
@@ -69,32 +83,36 @@ export default function ExporterBookings() {
     fetchBookings();
   }, []);
 
-  /* ---------------- DEMO PAYMENT ---------------- */
+  /* ---------------- RAZORPAY PAYMENT ---------------- */
 
-  const handleDemoPayment = async (bookingId: string, amount: number) => {
+  const handleRazorpayPayment = async (bookingId: string, amount: number) => {
+    if (payingId) return; // prevent double-clicks
+    setPayingId(bookingId);
+
     try {
-      // 1️⃣ Insert payment record
-      const { error: paymentError } = await supabase
-        .from("payments")
-        .insert({
-          booking_id: bookingId,
-          amount: amount,
-          currency: "INR",
-          payment_status: "paid",
-          provider: "demo",
-        });
+      // 1️⃣ Open Razorpay Checkout (no async before this so popup isn't blocked)
+      const rzpResponse = await openRazorpayCheckout({
+        amount,
+        bookingId,
+        customerEmail: userEmail,
+      });
 
-      if (paymentError) throw paymentError;
+      // 2️⃣ Payment successful — record in DB
+      await recordPayment({
+        booking_id: bookingId,
+        amount,
+        currency: "INR",
+        payment_method: "razorpay",
+        transaction_ref: rzpResponse.razorpay_payment_id,
+      });
 
-      // 2️⃣ Update booking status
-      const { error: bookingError } = await supabase
-        .from("bookings")
-        .update({ status: "paid" })
-        .eq("id", bookingId);
+      // 3️⃣ Mark booking as paid
+      await markBookingPaid(bookingId);
 
-      if (bookingError) throw bookingError;
+      // 4️⃣ Create tracking events
+      await createTrackingEvents(bookingId);
 
-      // 3️⃣ Update container space if partial booking
+      // 5️⃣ Update container space if partial booking
       const { data: bookingData } = await supabase
         .from("bookings")
         .select("selected_container_id, space_cbm")
@@ -102,7 +120,6 @@ export default function ExporterBookings() {
         .single();
 
       if (bookingData?.selected_container_id && bookingData?.space_cbm) {
-        // First get current container data
         const { data: containerData } = await supabase
           .from("containers")
           .select("available_space_cbm")
@@ -113,27 +130,40 @@ export default function ExporterBookings() {
           const newAvailableSpace = Math.max(0, containerData.available_space_cbm - bookingData.space_cbm);
           const newStatus = newAvailableSpace === 0 ? "full" : "available";
 
-          const { error: containerError } = await supabase
+          await supabase
             .from("containers")
-            .update({
-              available_space_cbm: newAvailableSpace,
-              status: newStatus
-            })
+            .update({ available_space_cbm: newAvailableSpace, status: newStatus })
             .eq("id", bookingData.selected_container_id);
-
-          if (containerError) console.error("Failed to update container space", containerError);
         }
       }
 
-      // 4️⃣ Update UI instantly
+      // 6️⃣ Ensure conversation is created
+      try {
+        await ensureConversation(bookingId);
+      } catch (convErr) {
+        console.error("Failed to create conversation:", convErr);
+      }
+
+      // 7️⃣ Update UI
       setBookings((prev) =>
         prev.map((b) =>
           b.id === bookingId ? { ...b, status: "paid" } : b
         )
       );
-    } catch (err) {
-      console.error("Payment failed", err);
-      alert("Payment failed");
+
+      toast({ title: "Payment successful!", description: `Payment ID: ${rzpResponse.razorpay_payment_id}` });
+
+      // 8️⃣ Navigate to tracking
+      navigate(`/tracking/${bookingId}`);
+    } catch (err: any) {
+      if (err?.message === "Payment cancelled by user") {
+        toast({ title: "Payment cancelled", variant: "destructive" });
+      } else {
+        console.error("Payment failed", err);
+        toast({ title: "Payment failed. Please try again.", variant: "destructive" });
+      }
+    } finally {
+      setPayingId(null);
     }
   };
 
@@ -218,11 +248,16 @@ export default function ExporterBookings() {
                     {b.status !== "paid" && b.price !== null && (
                       <Button
                         size="sm"
+                        disabled={payingId === b.id}
                         onClick={() =>
-                          handleDemoPayment(b.id, b.price!)
+                          handleRazorpayPayment(b.id, b.price!)
                         }
                       >
-                        Pay Now
+                        {payingId === b.id ? (
+                          <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Paying…</>
+                        ) : (
+                          "Pay Now"
+                        )}
                       </Button>
                     )}
 

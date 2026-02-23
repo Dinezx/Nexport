@@ -1,5 +1,82 @@
 import { supabase } from "@/lib/supabase";
 
+/* ---------- Razorpay type declarations ---------- */
+declare global {
+  interface Window {
+    Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
+  }
+}
+
+interface RazorpayOptions {
+  key: string;
+  amount: number; // in paise
+  currency: string;
+  name: string;
+  description: string;
+  order_id?: string;
+  prefill?: { name?: string; email?: string; contact?: string };
+  theme?: { color?: string };
+  handler: (response: RazorpayResponse) => void;
+  modal?: { ondismiss?: () => void };
+}
+
+interface RazorpayInstance {
+  open: () => void;
+  close: () => void;
+}
+
+export interface RazorpayResponse {
+  razorpay_payment_id: string;
+  razorpay_order_id?: string;
+  razorpay_signature?: string;
+}
+
+/* ---------- Open Razorpay Checkout ---------- */
+export function openRazorpayCheckout(params: {
+  amount: number; // in INR (we convert to paise)
+  bookingId: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+}): Promise<RazorpayResponse> {
+  return new Promise((resolve, reject) => {
+    const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
+    console.log("[Razorpay] Key ID:", keyId ? "present" : "MISSING");
+    console.log("[Razorpay] SDK loaded:", !!window.Razorpay);
+    console.log("[Razorpay] Amount (INR):", params.amount, "→ paise:", Math.round(params.amount * 100));
+
+    if (!keyId) {
+      reject(new Error("Razorpay Key ID not configured. Check VITE_RAZORPAY_KEY_ID in .env"));
+      return;
+    }
+
+    if (typeof window.Razorpay !== "function") {
+      reject(new Error("Razorpay SDK not loaded. Check checkout.js script in index.html"));
+      return;
+    }
+
+    const options: RazorpayOptions = {
+      key: keyId,
+      amount: Math.round(params.amount * 100), // INR → paise
+      currency: "INR",
+      name: "Nexport",
+      description: `Booking BK-${params.bookingId.slice(0, 8).toUpperCase()}`,
+      prefill: {
+        name: params.customerName ?? "",
+        email: params.customerEmail ?? "",
+        contact: params.customerPhone ?? "",
+      },
+      theme: { color: "#2563eb" },
+      handler: (response) => resolve(response),
+      modal: { ondismiss: () => reject(new Error("Payment cancelled by user")) },
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.open();
+  });
+}
+
+/* ---------- Record payment in DB ---------- */
 export async function recordPayment(params: {
   booking_id: string;
   amount: number;
@@ -14,7 +91,7 @@ export async function recordPayment(params: {
     amount,
     currency,
     payment_status: "success",
-    provider: "demo",
+    provider: "razorpay",
     payment_method,
     transaction_ref,
   });

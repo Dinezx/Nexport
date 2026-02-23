@@ -157,8 +157,8 @@ export default function Tracking() {
       for (const query of queries) {
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`,
-            { headers: { "User-Agent": "NEXPORT/1.0 (nexport-tracking@app.com)" } }
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+            { referrerPolicy: "no-referrer" }
           );
           const json = await res.json();
           if (json && json.length > 0) {

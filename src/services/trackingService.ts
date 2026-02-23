@@ -72,15 +72,6 @@ export async function upsertLiveLocation(params: {
   });
 
   if (error) throw error;
-
-  try {
-    await supabase
-      .from("bookings")
-      .update({ lat, lng })
-      .eq("id", booking_id);
-  } catch (err) {
-    // Ignore if booking table does not have lat/lng columns.
-  }
 }
 
 export async function insertTrackingEvent(params: {

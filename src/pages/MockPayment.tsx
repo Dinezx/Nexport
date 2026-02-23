@@ -9,9 +9,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, CreditCard, IndianRupee } from "lucide-react";
+import { Loader2, IndianRupee } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
+  openRazorpayCheckout,
   recordPayment,
   markBookingPaid,
   createTrackingEvents,
@@ -24,7 +25,6 @@ export default function MockPayment() {
   const { toast } = useToast();
 
   const [amount, setAmount] = useState<number>(0);
-  const [method, setMethod] = useState<"upi" | "card" | "netbanking">("upi");
   const [loading, setLoading] = useState(false);
 
   /* ---------------- FETCH BOOKING AMOUNT ---------------- */
@@ -61,41 +61,50 @@ export default function MockPayment() {
 
     setLoading(true);
 
-    const txnId =
-      "TXN-" +
-      Math.random().toString(36).substring(2, 10).toUpperCase();
-
     try {
-      // 1️⃣ Use payment service to record payment, update booking, and create tracking events
+      // Get current user info for prefill
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 1️⃣ Open Razorpay Checkout
+      const rzpResponse = await openRazorpayCheckout({
+        amount,
+        bookingId,
+        customerEmail: user?.email ?? "",
+      });
+
+      // 2️⃣ Record payment with Razorpay payment ID
       await recordPayment({
         booking_id: bookingId,
         amount,
         currency: "INR",
-        payment_method: method,
-        transaction_ref: txnId,
+        payment_method: "razorpay",
+        transaction_ref: rzpResponse.razorpay_payment_id,
       });
 
-      // 2️⃣ Mark booking as paid
+      // 3️⃣ Mark booking as paid
       await markBookingPaid(bookingId);
 
-      // 3️⃣ Create tracking events
+      // 4️⃣ Create tracking events
       await createTrackingEvents(bookingId);
 
-      // 4️⃣ Ensure conversation is created for exporter-provider communication
+      // 5️⃣ Ensure conversation is created
       try {
         await ensureConversation(bookingId);
       } catch (convErr) {
         console.error("Failed to create conversation:", convErr);
-        // Don't fail payment flow if conversation creation fails
       }
 
-      toast({ title: "Payment successful!", variant: "default" });
+      toast({ title: "Payment successful!", description: `Payment ID: ${rzpResponse.razorpay_payment_id}` });
 
-      // 5️⃣ Redirect to tracking
+      // 6️⃣ Redirect to tracking
       navigate(`/tracking/${bookingId}`);
-    } catch (err) {
-      console.error("Payment error:", err);
-      toast({ title: "Payment failed. Please try again.", variant: "destructive" });
+    } catch (err: any) {
+      if (err?.message === "Payment cancelled by user") {
+        toast({ title: "Payment cancelled", variant: "destructive" });
+      } else {
+        console.error("Payment error:", err);
+        toast({ title: "Payment failed. Please try again.", variant: "destructive" });
+      }
     } finally {
       setLoading(false);
     }
@@ -110,7 +119,7 @@ export default function MockPayment() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <IndianRupee className="h-5 w-5" />
-              Payment Gateway (Demo)
+              Razorpay Payment
             </CardTitle>
           </CardHeader>
 
@@ -119,24 +128,9 @@ export default function MockPayment() {
               Amount: ₹ {amount.toLocaleString("en-IN")}
             </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Select Payment Method</p>
-
-              {["upi", "card", "netbanking"].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMethod(m as any)}
-                  className={`w-full p-3 rounded-lg border text-left ${
-                    method === m
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  <CreditCard className="inline h-4 w-4 mr-2" />
-                  {m.toUpperCase()}
-                </button>
-              ))}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Click below to pay securely via Razorpay (UPI, Card, Netbanking).
+            </p>
 
             <Button
               className="w-full"
@@ -149,7 +143,7 @@ export default function MockPayment() {
                   Processing…
                 </>
               ) : (
-                "Pay Now"
+                "Pay with Razorpay"
               )}
             </Button>
           </CardContent>

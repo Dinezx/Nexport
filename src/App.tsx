@@ -11,6 +11,7 @@ import Chat from "./pages/Chat";
 import Tracking from "./pages/Tracking";
 import ProviderTracking from "./pages/ProviderTracking";
 import ProviderContainers from "./pages/ProviderContainers";
+import ProviderBookings from "./pages/ProviderBookings";
 import ExporterBookings from "./pages/ExporterBookings";
 import MockPayment from "./pages/MockPayment";
 import Settings from "./pages/Settings";
@@ -91,6 +92,14 @@ function App() {
         element={
           <ProtectedRoute allowedRoles={["provider"]}>
             <ProviderContainers />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/provider/bookings"
+        element={
+          <ProtectedRoute allowedRoles={["provider"]}>
+            <ProviderBookings />
           </ProtectedRoute>
         }
       />
