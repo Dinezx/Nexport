@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, MapPin, ArrowRight, MessageSquare } from "lucide-react";
+import { Loader2, MapPin, ArrowRight, MessageSquare, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -18,6 +18,7 @@ import {
   markBookingPaid,
   createTrackingEvents,
   ensureConversation,
+  releaseBookingHold,
 } from "@/services/paymentService";
 
 /* ---------------- Types ---------------- */
@@ -43,6 +44,7 @@ export default function ExporterBookings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -112,30 +114,8 @@ export default function ExporterBookings() {
       // 4️⃣ Create tracking events
       await createTrackingEvents(bookingId);
 
-      // 5️⃣ Update container space if partial booking
-      const { data: bookingData } = await supabase
-        .from("bookings")
-        .select("selected_container_id, space_cbm")
-        .eq("id", bookingId)
-        .single();
-
-      if (bookingData?.selected_container_id && bookingData?.space_cbm) {
-        const { data: containerData } = await supabase
-          .from("containers")
-          .select("available_space_cbm")
-          .eq("id", bookingData.selected_container_id)
-          .single();
-
-        if (containerData) {
-          const newAvailableSpace = Math.max(0, containerData.available_space_cbm - bookingData.space_cbm);
-          const newStatus = newAvailableSpace === 0 ? "full" : "available";
-
-          await supabase
-            .from("containers")
-            .update({ available_space_cbm: newAvailableSpace, status: newStatus })
-            .eq("id", bookingData.selected_container_id);
-        }
-      }
+      // 5️⃣ Container space was already reserved at booking creation time (pending_payment hold)
+      // No need to deduct again — just ensure conversation exists
 
       // 6️⃣ Ensure conversation is created
       try {
@@ -164,6 +144,31 @@ export default function ExporterBookings() {
       }
     } finally {
       setPayingId(null);
+    }
+  };
+
+  /* ---------------- CANCEL BOOKING (release hold) ---------------- */
+
+  const handleCancelBooking = async (bookingId: string) => {
+    if (cancellingId) return;
+    if (!confirm("Cancel this booking? The reserved container space will be released.")) return;
+
+    setCancellingId(bookingId);
+    try {
+      await releaseBookingHold(bookingId);
+
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === bookingId ? { ...b, status: "cancelled" } : b
+        )
+      );
+
+      toast({ title: "Booking cancelled. Container space released." });
+    } catch (err: any) {
+      console.error("Cancel failed", err);
+      toast({ title: err?.message || "Failed to cancel booking", variant: "destructive" });
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -245,20 +250,34 @@ export default function ExporterBookings() {
                   </div>
 
                   <div className="flex gap-2">
-                    {b.status !== "paid" && b.price !== null && (
-                      <Button
-                        size="sm"
-                        disabled={payingId === b.id}
-                        onClick={() =>
-                          handleRazorpayPayment(b.id, b.price!)
-                        }
-                      >
-                        {payingId === b.id ? (
-                          <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Paying…</>
-                        ) : (
-                          "Pay Now"
-                        )}
-                      </Button>
+                    {b.status === "pending_payment" && b.price !== null && (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={payingId === b.id}
+                          onClick={() =>
+                            handleRazorpayPayment(b.id, b.price!)
+                          }
+                        >
+                          {payingId === b.id ? (
+                            <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Paying…</>
+                          ) : (
+                            "Pay Now"
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={cancellingId === b.id}
+                          onClick={() => handleCancelBooking(b.id)}
+                        >
+                          {cancellingId === b.id ? (
+                            <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Cancelling…</>
+                          ) : (
+                            <><X className="h-4 w-4 mr-1" /> Cancel</>
+                          )}
+                        </Button>
+                      </>
                     )}
 
                     {b.status === "paid" && (

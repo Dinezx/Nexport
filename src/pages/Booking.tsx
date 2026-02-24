@@ -1246,16 +1246,43 @@ export default function Booking() {
         throw error;
       }
 
-      // Filter based on booking mode only when capacity fields exist
-      let filteredContainers = data || [];
+      // Fetch pending bookings to account for reserved (held) space
+      const containerIds = (data || []).map((c: any) => c.id);
+      let pendingReserved: Record<string, number> = {};
+      if (containerIds.length > 0) {
+        const { data: pendingBookings } = await supabase
+          .from("bookings")
+          .select("container_id, allocated_cbm, booking_mode")
+          .in("container_id", containerIds)
+          .eq("status", "pending_payment");
+
+        if (pendingBookings) {
+          for (const pb of pendingBookings) {
+            if (!pb.container_id) continue;
+            if (pb.booking_mode === "full") {
+              // Full booking hold = entire container
+              pendingReserved[pb.container_id] = Infinity;
+            } else {
+              pendingReserved[pb.container_id] = (pendingReserved[pb.container_id] || 0) + (pb.allocated_cbm || 0);
+            }
+          }
+        }
+      }
+
+      // Calculate effective available space (minus pending holds)
+      let filteredContainers = (data || []).map((c: any) => ({
+        ...c,
+        effective_available_cbm: Math.max(0, (c.available_space_cbm || 0) - (pendingReserved[c.id] || 0)),
+      }));
+
       if (form.booking_mode === "partial") {
-        filteredContainers = filteredContainers.filter(c =>
-          typeof c.available_space_cbm === "number" ? c.available_space_cbm > 0 : true
+        filteredContainers = filteredContainers.filter((c: any) =>
+          c.effective_available_cbm > 0
         );
       } else if (form.booking_mode === "full") {
-        filteredContainers = filteredContainers.filter(c =>
+        filteredContainers = filteredContainers.filter((c: any) =>
           typeof c.available_space_cbm === "number" && typeof c.total_space_cbm === "number"
-            ? c.available_space_cbm === c.total_space_cbm
+            ? c.effective_available_cbm === c.total_space_cbm
             : true
         );
       }

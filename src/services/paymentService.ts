@@ -180,3 +180,57 @@ export async function ensureConversation(bookingId: string) {
 
   return conversation.id;
 }
+
+/* ---------- Release booking hold (cancel pending booking) ---------- */
+export async function releaseBookingHold(bookingId: string) {
+  // 1. Fetch booking to get container info
+  const { data: booking, error: bookingError } = await supabase
+    .from("bookings")
+    .select("id, container_id, allocated_cbm, booking_mode, status")
+    .eq("id", bookingId)
+    .single();
+
+  if (bookingError || !booking) throw bookingError || new Error("Booking not found");
+
+  // Only release hold for pending_payment bookings
+  if (booking.status !== "pending_payment") {
+    throw new Error("Can only cancel pending bookings");
+  }
+
+  // 2. Restore container space
+  if (booking.container_id) {
+    const { data: container } = await supabase
+      .from("containers")
+      .select("available_space_cbm, total_space_cbm")
+      .eq("id", booking.container_id)
+      .single();
+
+    if (container) {
+      let restoredSpace = container.available_space_cbm;
+      if (booking.booking_mode === "full") {
+        restoredSpace = container.total_space_cbm;
+      } else if (booking.allocated_cbm) {
+        restoredSpace = Math.min(
+          container.total_space_cbm,
+          container.available_space_cbm + booking.allocated_cbm
+        );
+      }
+
+      await supabase
+        .from("containers")
+        .update({
+          available_space_cbm: restoredSpace,
+          status: restoredSpace > 0 ? "available" : "full",
+        })
+        .eq("id", booking.container_id);
+    }
+  }
+
+  // 3. Mark booking as cancelled
+  const { error: cancelError } = await supabase
+    .from("bookings")
+    .update({ status: "cancelled" })
+    .eq("id", bookingId);
+
+  if (cancelError) throw cancelError;
+}
