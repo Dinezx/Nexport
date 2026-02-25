@@ -86,7 +86,7 @@ export default function ProviderBookings() {
     fetchBookings();
   }, []);
 
-  /* ---------------- UI ---------------- */
+/* ---------------- UI ---------------- */
 
   const statusColor = (status: string) => {
     switch (status) {
