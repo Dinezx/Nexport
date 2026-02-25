@@ -15,14 +15,15 @@ import ProviderBookings from "./pages/ProviderBookings";
 import ExporterBookings from "./pages/ExporterBookings";
 import MockPayment from "./pages/MockPayment";
 import Settings from "./pages/Settings";
+import Landing from "./pages/Landing";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 
 function App() {
   return (
     <Routes>
-      {/* Auth */}
-      <Route path="/" element={<Login />} />
+      {/* Public */}
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
 
