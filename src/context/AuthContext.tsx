@@ -43,6 +43,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: profile.id,
           role: profile.role,
         });
+      } else {
+        // Profile doesn't exist yet – use localStorage role as fallback
+        const fallbackRole = localStorage.getItem("userRole") as AuthUser["role"] | null;
+        setUser({
+          id: session.user.id,
+          role: fallbackRole || "exporter",
+        });
       }
 
       setLoading(false);
@@ -52,7 +59,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
+    } = supabase.auth.onAuthStateChange((_event) => {
+      // Mark loading so ProtectedRoute doesn't redirect prematurely
+      setLoading(true);
       loadUser();
     });
 

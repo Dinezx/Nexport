@@ -23,28 +23,59 @@ export default function Login() {
     setError(null);
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    setLoading(false);
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      setError(error.message);
-      return;
+      if (!data.user) {
+        setError("Login failed – no user returned.");
+        setLoading(false);
+        return;
+      }
+
+      // Persist selected role so AuthContext can use it as fallback
+      localStorage.setItem("userRole", role);
+
+      // Check if a profiles row exists; create one if missing
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id, role")
+        .eq("id", data.user.id)
+        .single();
+
+      const effectiveRole = profile?.role ?? role;
+
+      if (!profile) {
+        // First login – insert profiles row
+        await supabase.from("profiles").insert({
+          id: data.user.id,
+          email: data.user.email,
+          role,
+        });
+      }
+
+      // Small delay to let AuthContext pick up the session
+      await new Promise((r) => setTimeout(r, 300));
+
+      navigate(
+        effectiveRole === "provider"
+          ? "/provider/dashboard"
+          : "/exporter/dashboard"
+      );
+    } catch (err: any) {
+      console.error("Login error", err);
+      setError(err?.message || "Unexpected error during login.");
+    } finally {
+      setLoading(false);
     }
-
-    if (data.user) {
-  localStorage.setItem("userRole", role); // role = "exporter" | "provider"
-
-  navigate(
-    role === "exporter"
-      ? "/exporter/dashboard"
-      : "/provider/dashboard"
-  );
-}
-
   };
 
   return (
@@ -64,7 +95,14 @@ export default function Login() {
             <CardDescription>Sign in using your account</CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-6">
+          <CardContent>
+            <form
+              className="space-y-6"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleLogin();
+              }}
+            >
             {/* Role Selection */}
             <div className="space-y-2">
               <Label>I am a</Label>
@@ -136,9 +174,9 @@ export default function Login() {
 
             {/* Submit */}
             <Button
+              type="submit"
               className="w-full"
               size="lg"
-              onClick={handleLogin}
               disabled={loading}
             >
               {loading ? "Signing in..." : "Sign In"}
@@ -146,11 +184,12 @@ export default function Login() {
 
             {/* Signup */}
             <p className="text-center text-sm text-muted-foreground">
-              Don’t have an account?{" "}
+              Don't have an account?{" "}
               <Link to="/signup" className="text-primary font-medium hover:underline">
                 Sign up
               </Link>
             </p>
+            </form>
           </CardContent>
         </Card>
       </div>
