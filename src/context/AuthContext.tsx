@@ -22,37 +22,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const loadUser = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-      if (!session?.user) {
+        if (!session?.user) {
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, role")
+          .eq("id", session.user.id)
+          .single();
+
+        if (profile) {
+          setUser({
+            id: profile.id,
+            role: profile.role,
+          });
+        } else {
+          // Profile doesn't exist yet – use localStorage role as fallback
+          const fallbackRole = localStorage.getItem("userRole") as AuthUser["role"] | null;
+          setUser({
+            id: session.user.id,
+            role: fallbackRole || "exporter",
+          });
+        }
+      } catch (err) {
+        console.warn("Auth: could not reach Supabase –", (err as Error).message);
         setUser(null);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, role")
-        .eq("id", session.user.id)
-        .single();
-
-      if (profile) {
-        setUser({
-          id: profile.id,
-          role: profile.role,
-        });
-      } else {
-        // Profile doesn't exist yet – use localStorage role as fallback
-        const fallbackRole = localStorage.getItem("userRole") as AuthUser["role"] | null;
-        setUser({
-          id: session.user.id,
-          role: fallbackRole || "exporter",
-        });
-      }
-
-      setLoading(false);
     };
 
     loadUser();
