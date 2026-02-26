@@ -93,7 +93,7 @@ export default function ExporterDashboard() {
       const { data: bk, error: bkErr } = await supabase
         .from("bookings")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("exporter_id", user.id)
         .order("created_at", { ascending: false });
 
       if (bkErr) throw bkErr;
@@ -135,7 +135,7 @@ export default function ExporterDashboard() {
           event: "*",
           schema: "public",
           table: "bookings",
-          filter: `user_id=eq.${user?.id}`,
+          filter: `exporter_id=eq.${user?.id}`,
         },
         () => fetchData()
       )
@@ -178,8 +178,8 @@ export default function ExporterDashboard() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-            <p className="text-zinc-400">
+            <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground">
               Welcome back! Here's your logistics overview.
             </p>
           </div>
@@ -189,7 +189,7 @@ export default function ExporterDashboard() {
               size="sm"
               onClick={fetchData}
               disabled={loading}
-              className="border-zinc-700"
+              className="border-border"
             >
               <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
               Refresh
@@ -256,26 +256,26 @@ export default function ExporterDashboard() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Active Bookings */}
           <div className="lg:col-span-2">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/80">
-              <div className="flex flex-row items-center justify-between p-6 border-b border-zinc-800">
+            <div className="rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex flex-row items-center justify-between p-6 border-b border-border">
                 <div>
-                  <h2 className="text-xl font-bold text-white">
+                  <h2 className="text-xl font-bold text-card-foreground">
                     Active Bookings
                   </h2>
-                  <p className="text-sm text-zinc-400">
+                  <p className="text-sm text-muted-foreground">
                     {activeBookings.length === 0
                       ? "No active bookings"
                       : `${activeBookings.length} active shipment${activeBookings.length > 1 ? "s" : ""}`}
                   </p>
                 </div>
-                <Button variant="outline" size="sm" asChild className="border-zinc-700">
+                <Button variant="outline" size="sm" asChild className="border-border">
                   <Link to="/exporter/bookings">View All</Link>
                 </Button>
               </div>
 
               <div className="p-6 space-y-4">
                 {activeBookings.length === 0 && !loading && (
-                  <p className="text-zinc-500 text-center py-8">
+                  <p className="text-muted-foreground text-center py-8">
                     No active bookings yet. Create your first booking!
                   </p>
                 )}
@@ -288,22 +288,22 @@ export default function ExporterDashboard() {
                   return (
                     <div
                       key={booking.id}
-                      className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-lg border border-zinc-800 bg-zinc-800/50 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
                       onClick={() => navigate(`/tracking/${booking.id}`)}
                     >
                       {/* Left */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-2">
-                          <span className="font-mono text-sm font-medium text-white">
+                          <span className="font-mono text-sm font-medium text-foreground">
                             BK-{booking.id.slice(0, 8).toUpperCase()}
                           </span>
                           <StatusBadge status={normalizedStatus(displayStatus)} />
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-zinc-400">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <MapPin className="h-4 w-4" />
                           {booking.origin} → {booking.destination}
                         </div>
-                        <div className="text-xs text-zinc-500 mt-1">
+                        <div className="text-xs text-muted-foreground mt-1">
                           {booking.transport_mode?.toUpperCase()} · {booking.booking_mode}
                           {booking.allocated_cbm ? ` · ${booking.allocated_cbm} CBM` : ""}
                         </div>
@@ -312,8 +312,8 @@ export default function ExporterDashboard() {
                       {/* Right */}
                       <div className="flex flex-col sm:items-end gap-2 sm:w-44">
                         <div className="text-sm">
-                          <span className="text-zinc-500">Price: </span>
-                          <span className="font-medium text-white">
+                          <span className="text-muted-foreground">Price: </span>
+                          <span className="font-medium text-foreground">
                             {booking.price
                               ? `₹${booking.price.toLocaleString("en-IN")}`
                               : "—"}
@@ -321,17 +321,17 @@ export default function ExporterDashboard() {
                         </div>
 
                         <div className="w-full">
-                          <Progress value={progress} className="h-2 bg-zinc-700" />
+                          <Progress value={progress} className="h-2 bg-muted" />
                         </div>
 
-                        <div className="text-xs text-zinc-500 capitalize">
+                        <div className="text-xs text-muted-foreground capitalize">
                           {displayStatus.replace(/_/g, " ")}
                         </div>
 
                         <Button
                           size="sm"
                           variant="outline"
-                          className="border-zinc-700"
+                          className="border-border"
                           onClick={(e) => {
                             e.stopPropagation();
                             navigate(`/tracking/${booking.id}`);
@@ -349,13 +349,13 @@ export default function ExporterDashboard() {
 
           {/* Quick Overview */}
           <div>
-            <div className="rounded-xl border border-primary/20 bg-zinc-900/80">
-              <div className="p-6 border-b border-zinc-800">
+            <div className="rounded-xl border border-primary/20 bg-card shadow-sm">
+              <div className="p-6 border-b border-border">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-5 w-5 text-primary" />
-                  <h2 className="text-xl font-bold text-white">Quick Overview</h2>
+                  <h2 className="text-xl font-bold text-card-foreground">Quick Overview</h2>
                 </div>
-                <p className="text-sm text-zinc-400 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   Your latest activity
                 </p>
               </div>
@@ -364,19 +364,19 @@ export default function ExporterDashboard() {
                 {bookings.slice(0, 4).map((b) => (
                   <div
                     key={b.id}
-                    className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700 cursor-pointer hover:bg-zinc-800 transition-colors"
+                    className="p-3 rounded-lg bg-muted/50 border border-border cursor-pointer hover:bg-muted transition-colors"
                     onClick={() => navigate(`/tracking/${b.id}`)}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="font-mono text-xs text-zinc-400">
+                      <span className="font-mono text-xs text-muted-foreground">
                         BK-{b.id.slice(0, 8).toUpperCase()}
                       </span>
                       <StatusBadge status={normalizedStatus(b.status)} />
                     </div>
-                    <p className="text-sm text-white">
+                    <p className="text-sm text-foreground">
                       {b.origin} → {b.destination}
                     </p>
-                    <p className="text-xs text-zinc-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       {b.price ? `₹${b.price.toLocaleString("en-IN")}` : "Pending"} ·{" "}
                       {new Date(b.created_at).toLocaleDateString()}
                     </p>
@@ -384,7 +384,7 @@ export default function ExporterDashboard() {
                 ))}
 
                 {bookings.length === 0 && !loading && (
-                  <p className="text-zinc-500 text-sm text-center py-4">
+                  <p className="text-muted-foreground text-sm text-center py-4">
                     No bookings yet
                   </p>
                 )}

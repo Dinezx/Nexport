@@ -147,15 +147,15 @@ export default function AdminDashboard() {
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-white">Admin Dashboard</h1>
-            <p className="text-zinc-400">System overview — live data</p>
+            <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
+            <p className="text-muted-foreground">System overview — live data</p>
           </div>
           <Button
             variant="outline"
             size="sm"
             onClick={fetchData}
             disabled={loading}
-            className="border-zinc-700"
+              className="border-border"
           >
             <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
             Refresh
@@ -211,19 +211,19 @@ export default function AdminDashboard() {
         {/* Main Grid */}
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Recent Activity */}
-          <div className="lg:col-span-2 rounded-xl border border-zinc-800 bg-zinc-900/80">
-            <div className="p-6 border-b border-zinc-800">
-              <h2 className="text-xl font-bold text-white">Recent Activity</h2>
-              <p className="text-sm text-zinc-400">Latest booking events</p>
+          <div className="lg:col-span-2 rounded-xl border border-border bg-card shadow-sm">
+            <div className="p-6 border-b border-border">
+              <h2 className="text-xl font-bold text-card-foreground">Recent Activity</h2>
+              <p className="text-sm text-muted-foreground">Latest booking events</p>
             </div>
             <div className="p-6 space-y-4">
               {recentActivity.length === 0 && !loading && (
-                <p className="text-zinc-500 text-center py-8">No activity yet</p>
+                <p className="text-muted-foreground text-center py-8">No activity yet</p>
               )}
               {recentActivity.map((activity, index) => (
                 <div
                   key={index}
-                  className="flex items-start gap-4 p-3 rounded-lg hover:bg-zinc-800/50 transition-colors"
+                  className="flex items-start gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors"
                 >
                   <div
                     className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 border ${
@@ -245,8 +245,8 @@ export default function AdminDashboard() {
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-zinc-200">{activity.message}</p>
-                    <div className="flex items-center gap-1 mt-1 text-xs text-zinc-500">
+                    <p className="text-sm text-foreground/90">{activity.message}</p>
+                    <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
                       {activity.time}
                     </div>
@@ -257,14 +257,14 @@ export default function AdminDashboard() {
           </div>
 
           {/* Top Providers */}
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/80">
-            <div className="p-6 border-b border-zinc-800">
-              <h2 className="text-xl font-bold text-white">Providers</h2>
-              <p className="text-sm text-zinc-400">{providers.length} registered</p>
+          <div className="rounded-xl border border-border bg-card shadow-sm">
+            <div className="p-6 border-b border-border">
+              <h2 className="text-xl font-bold text-card-foreground">Providers</h2>
+              <p className="text-sm text-muted-foreground">{providers.length} registered</p>
             </div>
             <div className="p-6 space-y-4">
               {providers.length === 0 && !loading && (
-                <p className="text-zinc-500 text-center py-4">No providers yet</p>
+                <p className="text-muted-foreground text-center py-4">No providers yet</p>
               )}
               {providers.slice(0, 6).map((provider, index) => {
                 const providerContainers = containers.filter(
@@ -276,17 +276,17 @@ export default function AdminDashboard() {
                 return (
                   <div
                     key={provider.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50 border border-zinc-700"
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-lg font-bold text-zinc-500 w-6">
+                      <span className="text-lg font-bold text-muted-foreground w-6">
                         #{index + 1}
                       </span>
                       <div>
-                        <p className="font-medium text-sm text-white">
+                        <p className="font-medium text-sm text-foreground">
                           {provider.name || provider.email || "Provider"}
                         </p>
-                        <p className="text-xs text-zinc-500">
+                        <p className="text-xs text-muted-foreground">
                           {providerContainers.length} containers · {providerBookings.length} bookings
                         </p>
                       </div>
@@ -302,11 +302,11 @@ export default function AdminDashboard() {
         </div>
 
         {/* Recent Bookings Table */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/80">
-          <div className="flex flex-row items-center justify-between p-6 border-b border-zinc-800">
+        <div className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex flex-row items-center justify-between p-6 border-b border-border">
             <div>
-              <h2 className="text-xl font-bold text-white">Recent Bookings</h2>
-              <p className="text-sm text-zinc-400">Latest booking activity across the platform</p>
+              <h2 className="text-xl font-bold text-card-foreground">Recent Bookings</h2>
+              <p className="text-sm text-muted-foreground">Latest booking activity across the platform</p>
             </div>
             <div className="flex items-center gap-2 text-sm text-emerald-400">
               <TrendingUp className="h-4 w-4" />
@@ -317,18 +317,18 @@ export default function AdminDashboard() {
             {bookings.slice(0, 8).map((booking) => (
               <div
                 key={booking.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border border-zinc-800 bg-zinc-800/30 hover:bg-zinc-800/50 transition-colors"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-4">
-                  <span className="font-mono font-bold text-sm text-white">
+                  <span className="font-mono font-bold text-sm text-foreground">
                     BK-{booking.id.slice(0, 8).toUpperCase()}
                   </span>
-                  <span className="text-sm text-zinc-400">
+                  <span className="text-sm text-muted-foreground">
                     {booking.price ? `₹${booking.price.toLocaleString("en-IN")}` : "—"}
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-sm text-zinc-300">
+                  <span className="text-sm text-foreground/80">
                     {booking.origin} → {booking.destination}
                   </span>
                   <Badge

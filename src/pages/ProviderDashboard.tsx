@@ -205,8 +205,8 @@ export default function ProviderDashboard() {
         {/* Header */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-white">Provider Dashboard</h1>
-            <p className="text-zinc-400">Manage your containers and shipments — live data.</p>
+            <h1 className="text-3xl font-bold text-foreground">Provider Dashboard</h1>
+            <p className="text-muted-foreground">Manage your containers and shipments — live data.</p>
           </div>
           <div className="flex gap-3">
             <Button
@@ -214,7 +214,7 @@ export default function ProviderDashboard() {
               size="sm"
               onClick={fetchData}
               disabled={loading}
-              className="border-zinc-700"
+              className="border-border"
             >
               <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
               Refresh
@@ -281,23 +281,23 @@ export default function ProviderDashboard() {
         )}
 
         {/* Shipments List */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/80">
-          <div className="flex items-center justify-between p-6 border-b border-zinc-800">
+        <div className="rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex items-center justify-between p-6 border-b border-border">
             <div>
-              <h2 className="text-xl font-bold text-white">Active Shipments</h2>
-              <p className="text-sm text-zinc-400">
+              <h2 className="text-xl font-bold text-card-foreground">Active Shipments</h2>
+              <p className="text-sm text-muted-foreground">
                 {activeBookings.length === 0
                   ? "No active shipments"
                   : `${activeBookings.length} shipment${activeBookings.length > 1 ? "s" : ""} in progress`}
               </p>
             </div>
-            <Button variant="outline" size="sm" asChild className="border-zinc-700">
+            <Button variant="outline" size="sm" asChild className="border-border">
               <Link to="/provider/bookings">View All</Link>
             </Button>
           </div>
           <div className="p-6 space-y-6">
             {activeBookings.length === 0 && !loading && (
-              <p className="text-zinc-500 text-center py-8">
+              <p className="text-muted-foreground text-center py-8">
                 No active shipments yet.
               </p>
             )}
@@ -310,37 +310,37 @@ export default function ProviderDashboard() {
               return (
                 <div
                   key={booking.id}
-                  className="p-6 rounded-xl border border-zinc-800 bg-zinc-800/30 hover:bg-zinc-800/50 transition-colors"
+                  className="p-6 rounded-xl border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                     {/* Shipment Info */}
                     <div className="flex-1 space-y-4">
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="font-mono text-sm font-bold text-white">
+                        <span className="font-mono text-sm font-bold text-foreground">
                           BK-{booking.id.slice(0, 8).toUpperCase()}
                         </span>
                         <StatusBadge status={normalizedStatus(displayStatus)} />
-                        <span className="text-xs text-zinc-500 capitalize">
+                        <span className="text-xs text-muted-foreground capitalize">
                           {displayStatus.replace(/_/g, " ")}
                         </span>
                       </div>
 
                       <div className="flex flex-wrap gap-6 text-sm">
-                        <div className="flex items-center gap-2 text-zinc-300">
-                          <MapPin className="h-4 w-4 text-zinc-500" />
+                        <div className="flex items-center gap-2 text-foreground/80">
+                          <MapPin className="h-4 w-4 text-muted-foreground" />
                           <span>{booking.origin} → {booking.destination}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-zinc-300">
-                          <Truck className="h-4 w-4 text-zinc-500" />
+                        <div className="flex items-center gap-2 text-foreground/80">
+                          <Truck className="h-4 w-4 text-muted-foreground" />
                           <span>{booking.transport_mode?.toUpperCase()}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-zinc-300">
-                          <Calendar className="h-4 w-4 text-zinc-500" />
+                        <div className="flex items-center gap-2 text-foreground/80">
+                          <Calendar className="h-4 w-4 text-muted-foreground" />
                           <span>{new Date(booking.created_at).toLocaleDateString()}</span>
                         </div>
                         {booking.price && (
-                          <div className="flex items-center gap-2 text-zinc-300">
-                            <DollarSign className="h-4 w-4 text-zinc-500" />
+                          <div className="flex items-center gap-2 text-foreground/80">
+                            <DollarSign className="h-4 w-4 text-muted-foreground" />
                             <span>₹{booking.price.toLocaleString("en-IN")}</span>
                           </div>
                         )}
@@ -363,7 +363,7 @@ export default function ProviderDashboard() {
                                         : "bg-emerald-500"
                                     }`}
                                   />
-                                  <span className="text-xs text-zinc-500 mt-1 whitespace-nowrap capitalize">
+                                  <span className="text-xs text-muted-foreground mt-1 whitespace-nowrap capitalize">
                                     {ev.status.replace(/_/g, " ")}
                                   </span>
                                 </div>
@@ -388,7 +388,7 @@ export default function ProviderDashboard() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                        className="border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                         onClick={() => navigate(`/tracking/${booking.id}`)}
                       >
                         Details
