@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Package, Mail, Lock, User, Truck, Building } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  isSupabaseReachable,
+  offlineSignUp,
+} from "@/lib/offlineAuth";
 
 type UserRole = "exporter" | "provider";
 
@@ -20,35 +24,60 @@ export default function Signup() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [offline, setOffline] = useState(false);
 
   const handleSignup = async () => {
-  setError(null);
-  setLoading(true);
+    setError(null);
+    setLoading(true);
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        name,
-        role,
-        company,
-      },
-    },
-  });
+    // -- Check Supabase reachability --
+    const online = await isSupabaseReachable(
+      import.meta.env.VITE_SUPABASE_URL!
+    );
 
-  if (error) {
-    setError(error.message);
+    if (online) {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            role,
+            company,
+          },
+        },
+      });
+
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(false);
+      navigate("/login");
+      return;
+    }
+
+    // -- Offline fallback --
+    setOffline(true);
+    const { error: localErr } = offlineSignUp(
+      email.trim(),
+      password,
+      role,
+      name,
+      company
+    );
+
+    if (localErr) {
+      setError(localErr);
+      setLoading(false);
+      return;
+    }
+
     setLoading(false);
-    return;
-  }
-
-  // DO NOT insert into profiles here
-  // Trigger will handle it
-
-  setLoading(false);
-  navigate("/login");
-};
+    navigate("/login");
+  };
 
 
   return (
@@ -102,6 +131,12 @@ export default function Signup() {
 
             <Label>Password</Label>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+
+            {offline && (
+              <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Supabase is unreachable — account saved locally (offline mode).
+              </p>
+            )}
 
             {error && <p className="text-sm text-red-500">{error}</p>}
 

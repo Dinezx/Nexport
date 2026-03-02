@@ -7,6 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Package, Mail, Lock, User, Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import {
+  isSupabaseReachable,
+  offlineSignIn,
+} from "@/lib/offlineAuth";
 
 type UserRole = "exporter" | "provider";
 
@@ -18,64 +22,100 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
 
   const handleLogin = async () => {
     setError(null);
     setLoading(true);
 
-    try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+    // -- 1. Check if Supabase is reachable --------------------------------
+    const online = await isSupabaseReachable(
+      import.meta.env.VITE_SUPABASE_URL!
+    );
 
-      if (signInError) {
-        setError(signInError.message);
+    // -- 2a. Online path – use Supabase auth ------------------------------
+    if (online) {
+      try {
+        const { data, error: signInError } =
+          await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          });
+
+        if (signInError) {
+          setError(signInError.message);
+          setLoading(false);
+          return;
+        }
+
+        if (!data.user) {
+          setError("Login failed – no user returned.");
+          setLoading(false);
+          return;
+        }
+
+        // Persist selected role so AuthContext can use it as fallback
+        localStorage.setItem("userRole", role);
+
+        // Check if a profiles row exists; create one if missing
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, role")
+          .eq("id", data.user.id)
+          .single();
+
+        const effectiveRole = profile?.role ?? role;
+
+        if (!profile) {
+          await supabase.from("profiles").insert({
+            id: data.user.id,
+            email: data.user.email,
+            role,
+          });
+        }
+
+        await new Promise((r) => setTimeout(r, 300));
+
+        navigate(
+          effectiveRole === "provider"
+            ? "/provider/dashboard"
+            : "/exporter/dashboard"
+        );
+      } catch (err: any) {
+        console.error("Login error", err);
+        setError(err?.message || "Unexpected error during login.");
+      } finally {
         setLoading(false);
-        return;
       }
-
-      if (!data.user) {
-        setError("Login failed – no user returned.");
-        setLoading(false);
-        return;
-      }
-
-      // Persist selected role so AuthContext can use it as fallback
-      localStorage.setItem("userRole", role);
-
-      // Check if a profiles row exists; create one if missing
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, role")
-        .eq("id", data.user.id)
-        .single();
-
-      const effectiveRole = profile?.role ?? role;
-
-      if (!profile) {
-        // First login – insert profiles row
-        await supabase.from("profiles").insert({
-          id: data.user.id,
-          email: data.user.email,
-          role,
-        });
-      }
-
-      // Small delay to let AuthContext pick up the session
-      await new Promise((r) => setTimeout(r, 300));
-
-      navigate(
-        effectiveRole === "provider"
-          ? "/provider/dashboard"
-          : "/exporter/dashboard"
-      );
-    } catch (err: any) {
-      console.error("Login error", err);
-      setError(err?.message || "Unexpected error during login.");
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    // -- 2b. Offline path – local auth ------------------------------------
+    setOffline(true);
+    const { user: localUser, error: localErr } = offlineSignIn(
+      email.trim(),
+      password
+    );
+
+    if (localErr || !localUser) {
+      setError(localErr || "Invalid credentials.");
+      setLoading(false);
+      return;
+    }
+
+    localStorage.setItem("userRole", localUser.role);
+
+    // Give AuthContext a tick to pick up the offline session
+    await new Promise((r) => setTimeout(r, 100));
+
+    setLoading(false);
+    navigate(
+      localUser.role === "provider"
+        ? "/provider/dashboard"
+        : localUser.role === "admin"
+        ? "/admin/dashboard"
+        : "/exporter/dashboard"
+    );
   };
 
   return (
@@ -166,6 +206,13 @@ export default function Login() {
                 />
               </div>
             </div>
+
+            {/* Offline banner */}
+            {offline && (
+              <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Supabase is unreachable — using offline mode.
+              </p>
+            )}
 
             {/* Error */}
             {error && (
