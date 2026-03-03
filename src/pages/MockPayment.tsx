@@ -18,6 +18,8 @@ import {
   createTrackingEvents,
   ensureConversation,
 } from "@/services/paymentService";
+import { getOfflineBookings, updateOfflineBooking } from "@/services/bookingService";
+import { isSupabaseReachable } from "@/lib/offlineAuth";
 
 export default function MockPayment() {
   const { bookingId } = useParams<{ bookingId: string }>();
@@ -26,6 +28,7 @@ export default function MockPayment() {
 
   const [amount, setAmount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
+  const [isOfflineBooking, setIsOfflineBooking] = useState(false);
 
   /* ---------------- FETCH BOOKING AMOUNT ---------------- */
 
@@ -33,7 +36,31 @@ export default function MockPayment() {
     if (!bookingId) return;
 
     const fetchAmount = async () => {
+      // Check if this is an offline booking
+      if (bookingId.startsWith("offline-")) {
+        setIsOfflineBooking(true);
+        const offlineBookings = getOfflineBookings();
+        const booking = offlineBookings.find((b) => b.id === bookingId);
+        if (booking?.price) {
+          setAmount(booking.price);
+        }
+        return;
+      }
+
+      // Online booking — try Supabase
       try {
+        const online = await isSupabaseReachable(3000);
+        if (!online) {
+          // Fallback: check offline storage even for non-offline IDs
+          const offlineBookings = getOfflineBookings();
+          const booking = offlineBookings.find((b) => b.id === bookingId);
+          if (booking?.price) {
+            setIsOfflineBooking(true);
+            setAmount(booking.price);
+          }
+          return;
+        }
+
         const { data, error } = await supabase
           .from("bookings")
           .select("price")
@@ -62,41 +89,70 @@ export default function MockPayment() {
     setLoading(true);
 
     try {
-      // Get current user info for prefill
-      const { data: { user } } = await supabase.auth.getUser();
+      // Try Razorpay if SDK is available
+      let paymentId = "";
+      const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
+      const razorpayAvailable = keyId && typeof window.Razorpay === "function";
 
-      // 1️⃣ Open Razorpay Checkout
-      const rzpResponse = await openRazorpayCheckout({
-        amount,
-        bookingId,
-        customerEmail: user?.email ?? "",
-      });
+      if (razorpayAvailable) {
+        // Get current user info for prefill
+        let email = "";
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          email = user?.email ?? "";
+        } catch {
+          // offline — skip prefill
+        }
 
-      // 2️⃣ Record payment with Razorpay payment ID
-      await recordPayment({
-        booking_id: bookingId,
-        amount,
-        currency: "INR",
-        payment_method: "razorpay",
-        transaction_ref: rzpResponse.razorpay_payment_id,
-      });
-
-      // 3️⃣ Mark booking as paid
-      await markBookingPaid(bookingId);
-
-      // 4️⃣ Create tracking events
-      await createTrackingEvents(bookingId);
-
-      // 5️⃣ Ensure conversation is created
-      try {
-        await ensureConversation(bookingId);
-      } catch (convErr) {
-        console.error("Failed to create conversation:", convErr);
+        // 1️⃣ Open Razorpay Checkout
+        const rzpResponse = await openRazorpayCheckout({
+          amount,
+          bookingId,
+          customerEmail: email,
+        });
+        paymentId = rzpResponse.razorpay_payment_id;
+      } else {
+        // Simulate payment when Razorpay isn't available
+        paymentId = `sim_${crypto.randomUUID().slice(0, 12)}`;
       }
 
-      toast({ title: "Payment successful!", description: `Payment ID: ${rzpResponse.razorpay_payment_id}` });
+      // 2️⃣ Post-payment operations
+      if (isOfflineBooking) {
+        // Offline booking — update status in localStorage
+        updateOfflineBooking(bookingId, { status: "paid" });
+        toast({
+          title: "Payment successful!",
+          description: `Payment ID: ${paymentId}`,
+        });
+      } else {
+        // Online booking — record in Supabase
+        try {
+          await recordPayment({
+            booking_id: bookingId,
+            amount,
+            currency: "INR",
+            payment_method: "razorpay",
+            transaction_ref: paymentId,
+          });
+          await markBookingPaid(bookingId);
+          await createTrackingEvents(bookingId);
+          try {
+            await ensureConversation(bookingId);
+          } catch (convErr) {
+            console.error("Failed to create conversation:", convErr);
+          }
+        } catch (dbErr) {
+          console.error("DB operations failed, treating as offline:", dbErr);
+          // Fallback: save status locally
+          updateOfflineBooking(bookingId, { status: "paid" });
+        }
+        toast({
+          title: "Payment successful!",
+          description: `Payment ID: ${paymentId}`,
+        });
+      }
 
-      // 6️⃣ Redirect to tracking
+      // 3️⃣ Redirect to tracking
       navigate(`/tracking/${bookingId}`);
     } catch (err: any) {
       if (err?.message === "Payment cancelled by user") {
