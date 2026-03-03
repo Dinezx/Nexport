@@ -1253,10 +1253,39 @@ export default function Booking() {
     const getDemoContainers = () => {
       const totalCbm = form.container_size === "20" ? 33 : 67;
       const origin = form.origin || "Chennai Port, India";
-      return [
+
+      // Check localStorage for previously-booked containers
+      const CONTAINER_KEY = "nexport_offline_containers";
+      const stored: any[] = (() => {
+        try { return JSON.parse(localStorage.getItem(CONTAINER_KEY) || "[]"); }
+        catch { return []; }
+      })();
+
+      // Match stored containers by type/size/origin
+      const matching = stored.filter((c: any) => {
+        const cType = c.container_type || c.type;
+        const cSize = c.container_size || c.size;
+        return cType === form.container_type && cSize === sizeFormatted;
+      });
+
+      // If we have stored containers (i.e. user previously booked), use them
+      if (matching.length > 0) {
+        return matching
+          .filter((c: any) => c.status !== "full") // hide fully used ones
+          .map((c: any) => ({
+            ...c,
+            effective_available_cbm: c.available_space_cbm ?? c.total_space_cbm ?? totalCbm,
+          }));
+      }
+
+      // Otherwise generate fresh demo containers
+      const demo1Id = `demo-${form.container_type}-${form.container_size}-1`;
+      const demo2Id = `demo-${form.container_type}-${form.container_size}-2`;
+
+      const demos = [
         {
-          id: `demo-${form.container_type}-${form.container_size}-1`,
-          container_number: `NEXU${Math.floor(1000000 + Math.random() * 9000000)}`,
+          id: demo1Id,
+          container_number: `CONT-${Date.now()}001`,
           container_type: form.container_type,
           container_size: sizeFormatted,
           total_space_cbm: totalCbm,
@@ -1267,8 +1296,8 @@ export default function Booking() {
           status: "available",
         },
         {
-          id: `demo-${form.container_type}-${form.container_size}-2`,
-          container_number: `NEXU${Math.floor(1000000 + Math.random() * 9000000)}`,
+          id: demo2Id,
+          container_number: `CONT-${Date.now()}002`,
           container_type: form.container_type,
           container_size: sizeFormatted,
           total_space_cbm: totalCbm,
@@ -1279,6 +1308,14 @@ export default function Booking() {
           status: "available",
         },
       ];
+
+      // Persist demos so future bookings can see updated space
+      localStorage.setItem(
+        CONTAINER_KEY,
+        JSON.stringify([...stored, ...demos])
+      );
+
+      return demos;
     };
 
     try {
@@ -1560,6 +1597,73 @@ export default function Booking() {
       saveOfflineBooking(booking);
     }
 
+    // ── Update container space after booking (both full & partial) ──
+    if (form.selected_container_id) {
+      const allocatedCbm =
+        form.booking_mode === "partial"
+          ? Math.max(0, Number(form.space_cbm))
+          : selectedContainer?.total_space_cbm ?? 0;
+
+      if (online) {
+        try {
+          const { data: currentContainer, error: fetchError } = await supabase
+            .from("containers")
+            .select("available_space_cbm, total_space_cbm")
+            .eq("id", form.selected_container_id)
+            .single();
+
+          if (fetchError || !currentContainer) {
+            console.error("Failed to fetch container data:", fetchError);
+          } else {
+            const newAvailableSpace =
+              form.booking_mode === "full"
+                ? 0
+                : Math.max(0, currentContainer.available_space_cbm - allocatedCbm);
+            const newStatus = newAvailableSpace === 0 ? "full" : "active";
+
+            const { error: containerError } = await supabase
+              .from("containers")
+              .update({
+                available_space_cbm: newAvailableSpace,
+                status: newStatus,
+              })
+              .eq("id", form.selected_container_id);
+
+            if (containerError) {
+              console.error("Failed to update container space:", containerError);
+            }
+          }
+        } catch (err) {
+          console.error("Error updating container space:", err);
+        }
+      } else {
+        // Offline / demo container — persist in localStorage
+        try {
+          const CONTAINER_KEY = "nexport_offline_containers";
+          const stored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY) || "[]");
+          const idx = stored.findIndex((c: any) => c.id === form.selected_container_id);
+
+          const ctr = idx !== -1 ? stored[idx] : selectedContainer ? { ...selectedContainer } : null;
+          if (ctr) {
+            ctr.available_space_cbm =
+              form.booking_mode === "full"
+                ? 0
+                : Math.max(0, (ctr.available_space_cbm ?? ctr.total_space_cbm ?? 0) - allocatedCbm);
+            ctr.status = ctr.available_space_cbm === 0 ? "full" : "active";
+
+            if (idx !== -1) {
+              stored[idx] = ctr;
+            } else {
+              stored.push(ctr);
+            }
+            localStorage.setItem(CONTAINER_KEY, JSON.stringify(stored));
+          }
+        } catch (err) {
+          console.error("Error updating offline container space:", err);
+        }
+      }
+    }
+
     // --- Online-only operations (AI, containers, conversations) ---
     if (online) {
 
@@ -1639,44 +1743,6 @@ export default function Booking() {
       }
     } catch (e) {
       console.error("Failed to fetch delay risk", e);
-    }
-
-    // Update container space after booking
-    if (form.booking_mode === "partial" && form.selected_container_id) {
-      try {
-        const allocatedCbm = Math.max(0, Number(form.space_cbm));
-
-        // First fetch current container data
-        const { data: currentContainer, error: fetchError } = await supabase
-          .from("containers")
-          .select("available_space_cbm")
-          .eq("id", form.selected_container_id)
-          .single();
-
-        if (fetchError || !currentContainer) {
-          console.error("Failed to fetch container data:", fetchError);
-          return;
-        }
-
-        const newAvailableSpace = Math.max(0, currentContainer.available_space_cbm - allocatedCbm);
-        const newStatus = newAvailableSpace === 0 ? "full" : "active";
-
-        // Update container with calculated values
-        const { error: containerError } = await supabase
-          .from("containers")
-          .update({
-            available_space_cbm: newAvailableSpace,
-            status: newStatus
-          })
-          .eq("id", form.selected_container_id);
-
-        if (containerError) {
-          console.error("Failed to update container space:", containerError);
-          // Don't block the booking flow, but log the error
-        }
-      } catch (err) {
-        console.error("Error updating container space:", err);
-      }
     }
 
     // 4️⃣ Create conversation and initial system message
@@ -1973,10 +2039,10 @@ export default function Booking() {
                               </div>
                               <div className="text-right">
                                 <div className="text-sm font-medium">
-                                  {form.booking_mode === "partial"
-                                    ? `${((container.total_space_cbm - container.available_space_cbm) / container.total_space_cbm * 100).toFixed(1)}% Used`
-                                    : "100% Available"
-                                  }
+                                  {(() => {
+                                    const used = (container.total_space_cbm - (container.available_space_cbm ?? container.total_space_cbm)) / container.total_space_cbm * 100;
+                                    return `${used.toFixed(1)}% Used`;
+                                  })()}
                                 </div>
                               </div>
                             </div>
