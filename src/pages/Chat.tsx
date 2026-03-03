@@ -17,7 +17,8 @@ import {
   Loader2,
   AlertTriangle,
   MessageSquare,
-  ArrowRight,
+  Bot,
+  Truck,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -37,11 +38,7 @@ import { supabase } from "@/lib/supabase";
 
 type SenderRole = "exporter" | "provider" | "ai" | "system";
 type DeliveryStatus = "pending" | "sent" | "delivered" | "failed";
-
-interface TypingIndicator {
-  userId: string;
-  role: SenderRole;
-}
+type ChatMode = "ai" | "provider";
 
 export default function Chat() {
   const { user } = useAuth();
@@ -51,21 +48,26 @@ export default function Chat() {
 
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [chatMode, setChatMode] = useState<ChatMode>("ai");
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<TypingIndicator[]>([]);
+  const [providerTyping, setProviderTyping] = useState(false);
   const [rateLimitStatus, setRateLimitStatus] = useState<any>(null);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   const [messageStatuses, setMessageStatuses] = useState<Record<string, DeliveryStatus>>({});
 
+  // Messages are stored per conversation + mode
+  // e.g. "conv-offline-xxx:ai" and "conv-offline-xxx:provider"
+  const getStorageKey = (convId: string, mode: ChatMode) => `${convId}:${mode}`;
+
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, aiThinking]);
+  }, [messages, aiThinking, providerTyping]);
 
   // Load all conversations for the current user
   useEffect(() => {
@@ -76,7 +78,6 @@ export default function Chat() {
         const allConvos = await fetchAllConversations(user.id);
         setConversations(allConvos);
 
-        // Auto-select conversation from URL query param (?booking=xxx)
         const bookingParam = searchParams.get("booking");
         if (bookingParam && allConvos.length > 0) {
           const match = allConvos.find((c) => c.booking_id === bookingParam);
@@ -86,7 +87,6 @@ export default function Chat() {
           }
         }
 
-        // Otherwise select the first/latest conversation
         if (allConvos.length > 0 && !conversation) {
           setConversation(allConvos[0]);
         }
@@ -99,12 +99,11 @@ export default function Chat() {
     loadConversations();
   }, [user]);
 
-  // Load messages when conversation changes
+  // Load messages when conversation or chatMode changes
   useEffect(() => {
     if (!conversation || !user) return;
     const loadMessages = async () => {
       try {
-        // Rate limit: skip for offline conversations, allow by default
         if (conversation.id.startsWith("conv-offline-")) {
           setRateLimitStatus({ allowed: true, remaining: 99, resetAt: new Date(Date.now() + 3600000) });
         } else {
@@ -112,19 +111,41 @@ export default function Chat() {
             const limitStatus = await checkRateLimit(supabase as any, user.id);
             setRateLimitStatus(limitStatus);
           } catch {
-            // Offline fallback — allow messaging
             setRateLimitStatus({ allowed: true, remaining: 99, resetAt: new Date(Date.now() + 3600000) });
           }
         }
 
-        const msgData = await fetchConversationMessages(conversation.id);
-        setMessages(msgData || []);
+        // Load messages for current mode
+        const key = getStorageKey(conversation.id, chatMode);
+        const stored = localStorage.getItem(`nexport_chat_${key}`);
+        if (stored) {
+          setMessages(JSON.parse(stored));
+        } else {
+          // For AI mode, load existing conversation messages (backward compat)
+          if (chatMode === "ai") {
+            const msgData = await fetchConversationMessages(conversation.id);
+            // Filter to only AI/system/own messages
+            const aiMsgs = (msgData || []).filter(
+              (m: Message) => m.sender_role !== "provider"
+            );
+            setMessages(aiMsgs);
+          } else {
+            setMessages([]);
+          }
+        }
       } catch (err) {
         console.error("Failed to load messages:", err);
       }
     };
     loadMessages();
-  }, [conversation?.id, user]);
+  }, [conversation?.id, user, chatMode]);
+
+  // Save messages whenever they change
+  useEffect(() => {
+    if (!conversation) return;
+    const key = getStorageKey(conversation.id, chatMode);
+    localStorage.setItem(`nexport_chat_${key}`, JSON.stringify(messages));
+  }, [messages, conversation?.id, chatMode]);
 
   // Realtime subscription for new messages in this conversation
   useEffect(() => {
@@ -149,6 +170,14 @@ export default function Chat() {
 
   const selectConversation = (conv: ConversationWithDetails) => {
     setConversation(conv);
+    setMessages([]);
+    setError(null);
+    setRateLimitError(null);
+  };
+
+  const switchMode = (mode: ChatMode) => {
+    if (mode === chatMode) return;
+    setChatMode(mode);
     setMessages([]);
     setError(null);
     setRateLimitError(null);
@@ -196,100 +225,69 @@ export default function Chat() {
       setMessages((prev) => [...prev, userMsg]);
       const messageText = text;
       setText("");
-      
-      if (senderRole === "exporter") {
-        const lower = messageText.toLowerCase();
-        const operationalKeywords = ["customs", "clearance", "cutoff", "documentation"];
-        const providerKeywords = ["talk to provider", "connect me", "speak to", "talk to human", "real person", "provider", "connect provider", "want to talk", "need to talk", "contact provider"];
-        const isOperationalQuestion = operationalKeywords.some((k) => lower.includes(k));
-        const wantsProvider = providerKeywords.some((k) => lower.includes(k));
 
-        if (isOperationalQuestion || wantsProvider) {
-          try {
-            // System notification
-            const systemMsg = await insertMessage({
-              conversationId: conversation.id,
-              senderId: user.id,
-              senderRole: "system" as SenderRole,
-              content: wantsProvider
-                ? "Your request has been forwarded to the logistics provider. They will respond shortly."
-                : "This question has been flagged for your logistics provider to review.",
+      if (chatMode === "ai") {
+        // AI mode — always get AI response
+        setAiThinking(true);
+        try {
+          const aiResult = await sendAiMessage({
+            message: messageText,
+            bookingId: conversation.booking_id,
+            conversationId: conversation.id,
+          });
+
+          if (aiResult?.offlineMessage) {
+            // Override role to ensure AI for this mode
+            const aiMsg = { ...aiResult.offlineMessage, sender_role: "ai" as SenderRole, sender_id: "ai" };
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === aiMsg.id)) return prev;
+              return [...prev, aiMsg];
             });
-            if (systemMsg) {
-              setMessageStatuses((prev) => ({ ...prev, [systemMsg.id]: "delivered" }));
-              setMessages((prev) => [...prev, systemMsg]);
-            }
-
-            // AI acknowledgment
-            const aiAckMsg = await insertMessage({
-              conversationId: conversation.id,
-              senderId: "ai",
-              senderRole: "ai" as SenderRole,
-              content: wantsProvider
-                ? "I've notified the logistics provider about your request. They will join this conversation shortly. In the meantime, feel free to ask me any questions about your shipment."
-                : "This question involves operational details (e.g. customs, clearance, cutoff, documentation). I have forwarded it to your logistics provider for confirmation.",
-            });
-            if (aiAckMsg) {
-              setMessageStatuses((prev) => ({ ...prev, [aiAckMsg.id]: "delivered" }));
-              setMessages((prev) => [...prev, aiAckMsg]);
-            }
-
-            // Simulate provider joining after a short delay
-            setTimeout(async () => {
-              const providerMsg = await insertMessage({
-                conversationId: conversation.id,
-                senderId: "offline-provider",
-                senderRole: "provider" as SenderRole,
-                content: `Hello! I'm the logistics provider handling your shipment from ${(conversation as ConversationWithDetails).booking_origin || "origin"} to ${(conversation as ConversationWithDetails).booking_destination || "destination"}. How can I assist you?`,
-              });
-              if (providerMsg) {
-                setMessageStatuses((prev) => ({ ...prev, [providerMsg.id]: "delivered" }));
-                setMessages((prev) => [...prev, providerMsg]);
-              }
-            }, 1500);
-          } catch (err) {
-            console.error("Error connecting to provider:", err);
-            toast({ title: "Failed to connect to provider.", variant: "destructive" });
           }
-        } else {
-          setAiThinking(true);
-          try {
-            const aiResult = await sendAiMessage({
-              message: messageText,
-              bookingId: conversation.booking_id,
-              conversationId: conversation.id,
-            });
-
-            // For offline conversations, the AI reply comes back directly
-            if (aiResult?.offlineMessage) {
-              setMessages((prev) => {
-                if (prev.some((m) => m.id === aiResult.offlineMessage.id)) return prev;
-                return [...prev, aiResult.offlineMessage];
-              });
-            }
-            
-            await logTokenUsage(supabase as any, {
-              userId: user.id,
-              conversationId: conversation.id,
-              inputTokens: Math.ceil(messageText.length / 4),
-              outputTokens: 256,
-              model: import.meta.env.VITE_HF_MODEL || "unknown",
-            }).catch(console.error);
-          } catch (err) {
-            console.error("ai-chat error:", err);
-            const errorMsg = err instanceof Error ? err.message : "Network error";
-            toast({ title: `AI service error: ${errorMsg}`, variant: "destructive" });
-            
-            await logTokenUsage(supabase as any, {
-              userId: user.id,
-              conversationId: conversation.id,
-              inputTokens: Math.ceil(messageText.length / 4),
-              outputTokens: 0,
-              model: import.meta.env.VITE_HF_MODEL || "unknown",
-            }).catch(console.error);
-          }
-          setAiThinking(false);
+          
+          await logTokenUsage(supabase as any, {
+            userId: user.id,
+            conversationId: conversation.id,
+            inputTokens: Math.ceil(messageText.length / 4),
+            outputTokens: 256,
+            model: import.meta.env.VITE_HF_MODEL || "unknown",
+          }).catch(console.error);
+        } catch (err) {
+          console.error("ai-chat error:", err);
+          const errorMsg = err instanceof Error ? err.message : "Network error";
+          toast({ title: `AI service error: ${errorMsg}`, variant: "destructive" });
         }
+        setAiThinking(false);
+      } else {
+        // Provider mode — simulate provider typing then reply
+        setProviderTyping(true);
+        // Random delay 1-3s to feel natural
+        const delay = 1000 + Math.random() * 2000;
+        await new Promise((r) => setTimeout(r, delay));
+        
+        try {
+          const aiResult = await sendAiMessage({
+            message: messageText,
+            bookingId: conversation.booking_id,
+            conversationId: `provider-${conversation.id}`,
+          });
+
+          if (aiResult?.offlineMessage) {
+            const providerMsg: Message = {
+              ...aiResult.offlineMessage,
+              sender_role: "provider",
+              sender_id: "offline-provider",
+            };
+            setMessageStatuses((prev) => ({ ...prev, [providerMsg.id]: "delivered" }));
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === providerMsg.id)) return prev;
+              return [...prev, providerMsg];
+            });
+          }
+        } catch (err) {
+          console.error("Provider reply error:", err);
+        }
+        setProviderTyping(false);
       }
     } catch (err) {
       console.error("Send error:", err);
@@ -311,7 +309,7 @@ export default function Chat() {
   };
 
   const isOwnMessage = (msg: Message) =>
-    msg.sender_role === "exporter" || msg.sender_role === "provider";
+    msg.sender_id === user?.id;
 
   return (
     <DashboardLayout userType={user?.role === "provider" ? "provider" : "exporter"}>
@@ -386,24 +384,60 @@ export default function Chat() {
 
         {/* ——— Chat Area ——— */}
         <div className="flex-1 flex flex-col">
-          {/* Header */}
-          <div className="p-4 border-b flex justify-between items-center">
-            <div>
-              <h3 className="font-semibold text-white">
-                {conversation ? formatRoute(conversation as ConversationWithDetails) : "NEXPORT Chat"}
-              </h3>
-              <span className="text-xs text-zinc-500">
-                {conversation ? "Exporter ↔ Provider • AI Assistant" : "Select a conversation"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {rateLimitStatus && (
-                <span className="text-xs text-zinc-400">
-                  {formatRateLimitStatus(rateLimitStatus)}
+          {/* Header with Mode Tabs */}
+          <div className="border-b">
+            <div className="p-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-semibold text-white">
+                  {conversation ? formatRoute(conversation as ConversationWithDetails) : "NEXPORT Chat"}
+                </h3>
+                <span className="text-xs text-zinc-500">
+                  {conversation
+                    ? chatMode === "ai"
+                      ? "AI Assistant"
+                      : "Provider Chat"
+                    : "Select a conversation"}
                 </span>
-              )}
-              <MoreVertical className="text-zinc-400 h-5 w-5" />
+              </div>
+              <div className="flex items-center gap-2">
+                {rateLimitStatus && (
+                  <span className="text-xs text-zinc-400">
+                    {formatRateLimitStatus(rateLimitStatus)}
+                  </span>
+                )}
+                <MoreVertical className="text-zinc-400 h-5 w-5" />
+              </div>
             </div>
+
+            {/* AI / Provider Toggle Tabs */}
+            {conversation && (
+              <div className="flex border-t border-zinc-800">
+                <button
+                  onClick={() => switchMode("ai")}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+                    chatMode === "ai"
+                      ? "text-primary border-b-2 border-primary bg-primary/5"
+                      : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                  )}
+                >
+                  <Bot className="h-4 w-4" />
+                  AI Assistant
+                </button>
+                <button
+                  onClick={() => switchMode("provider")}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+                    chatMode === "provider"
+                      ? "text-blue-400 border-b-2 border-blue-400 bg-blue-400/5"
+                      : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                  )}
+                >
+                  <Truck className="h-4 w-4" />
+                  Provider
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Alerts */}
@@ -431,11 +465,23 @@ export default function Chat() {
 
             {conversation && messages.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-zinc-500">
-                <Sparkles className="h-10 w-10 mb-3 text-primary/50" />
-                <p className="text-sm">No messages yet. Say hello!</p>
-                <p className="text-xs text-zinc-600 mt-1">
-                  You can ask about ETA, pricing, or coordinate with the provider.
-                </p>
+                {chatMode === "ai" ? (
+                  <>
+                    <Sparkles className="h-10 w-10 mb-3 text-primary/50" />
+                    <p className="text-sm font-medium">AI Assistant</p>
+                    <p className="text-xs text-zinc-600 mt-1">
+                      Ask about ETA, pricing, shipment status, or container details.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <User className="h-10 w-10 mb-3 text-blue-400/50" />
+                    <p className="text-sm font-medium">Provider Chat</p>
+                    <p className="text-xs text-zinc-600 mt-1">
+                      Chat directly with the logistics provider about your shipment.
+                    </p>
+                  </>
+                )}
               </div>
             )}
 
@@ -447,13 +493,18 @@ export default function Chat() {
                   isOwnMessage(msg) && "flex-row-reverse"
                 )}
               >
-                <div className="h-8 w-8 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
+                <div className={cn(
+                  "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
+                  msg.sender_role === "provider" ? "bg-blue-900/50" :
+                  msg.sender_role === "ai" ? "bg-primary/10" :
+                  "bg-zinc-700"
+                )}>
                   {msg.sender_role === "ai" ? (
                     <Sparkles className="h-4 w-4 text-primary" />
                   ) : msg.sender_role === "system" ? (
                     <AlertCircle className="h-4 w-4 text-zinc-400" />
                   ) : msg.sender_role === "provider" ? (
-                    <User className="h-4 w-4 text-blue-400" />
+                    <Truck className="h-4 w-4 text-blue-400" />
                   ) : (
                     <User className="h-4 w-4 text-zinc-300" />
                   )}
@@ -462,17 +513,21 @@ export default function Chat() {
                   <div className={cn(
                     "px-4 py-2 rounded-lg",
                     msg.sender_role === "system" ? "bg-zinc-800/50 border border-zinc-700" :
-                    msg.sender_role === "ai" ? "bg-zinc-800" :
-                    msg.sender_role === "provider" ? "bg-blue-900/30" :
+                    msg.sender_role === "ai" ? "bg-zinc-800 border border-primary/20" :
+                    msg.sender_role === "provider" ? "bg-blue-900/20 border border-blue-800/30" :
+                    isOwnMessage(msg) ? "bg-primary/20 border border-primary/30" :
                     "bg-zinc-800"
                   )}>
                     {msg.sender_role === "system" && (
                       <span className="text-[10px] text-zinc-500 block mb-1">System</span>
                     )}
+                    {msg.sender_role === "ai" && (
+                      <span className="text-[10px] text-primary/70 block mb-1">AI Assistant</span>
+                    )}
                     {msg.sender_role === "provider" && (
                       <span className="text-[10px] text-blue-400 block mb-1">Provider</span>
                     )}
-                    <p className="text-sm text-zinc-100">{msg.content}</p>
+                    <p className="text-sm text-zinc-100 whitespace-pre-wrap">{msg.content}</p>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-zinc-500 px-1">
                     <Clock className="h-3 w-3" />
@@ -499,36 +554,33 @@ export default function Chat() {
               </div>
             ))}
 
-            {/* Typing Indicators */}
-            {typingUsers.map((typist) => (
-              <div key={typist.userId} className="flex gap-3">
-                <div className="h-8 w-8 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
-                  {typist.role === "ai" ? (
-                    <Sparkles className="h-4 w-4 text-primary" />
-                  ) : (
-                    <User className="h-4 w-4 text-zinc-300" />
-                  )}
-                </div>
-                <div className="bg-zinc-800 px-4 py-2 rounded-lg">
-                  <div className="flex gap-1">
-                    <div className="h-2 w-2 bg-zinc-400 rounded-full animate-bounce" />
-                    <div className="h-2 w-2 bg-zinc-400 rounded-full animate-bounce delay-100" />
-                    <div className="h-2 w-2 bg-zinc-400 rounded-full animate-bounce delay-200" />
-                  </div>
-                </div>
-              </div>
-            ))}
-
+            {/* AI Thinking */}
             {aiThinking && (
               <div className="flex gap-3">
-                <div className="h-8 w-8 rounded-full bg-zinc-700 flex items-center justify-center flex-shrink-0">
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                   <Sparkles className="h-4 w-4 text-primary" />
                 </div>
-                <div className="bg-zinc-800 px-4 py-2 rounded-lg max-w-[70%]">
+                <div className="bg-zinc-800 border border-primary/20 px-4 py-2 rounded-lg max-w-[70%]">
                   <p className="text-sm text-zinc-400 flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    NEXPORT AI is thinking…
+                    AI is thinking…
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Provider Typing */}
+            {providerTyping && (
+              <div className="flex gap-3">
+                <div className="h-8 w-8 rounded-full bg-blue-900/50 flex items-center justify-center flex-shrink-0">
+                  <Truck className="h-4 w-4 text-blue-400" />
+                </div>
+                <div className="bg-blue-900/20 border border-blue-800/30 px-4 py-3 rounded-lg">
+                  <div className="flex gap-1.5">
+                    <div className="h-2 w-2 bg-blue-400 rounded-full animate-bounce" />
+                    <div className="h-2 w-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.1s]" />
+                    <div className="h-2 w-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                  </div>
                 </div>
               </div>
             )}
@@ -553,14 +605,20 @@ export default function Chat() {
               placeholder={
                 !conversation
                   ? "Select a conversation to start chatting"
-                  : rateLimitStatus?.allowed
-                    ? "Ask about booking, ETA, pricing..."
-                    : "Rate limit exceeded"
+                  : chatMode === "ai"
+                    ? "Ask AI about ETA, pricing, tracking..."
+                    : "Message the provider..."
               }
               disabled={loading || !conversation || !rateLimitStatus?.allowed}
               className="disabled:opacity-50"
             />
-            <Button onClick={sendMessage} disabled={loading || !conversation || !rateLimitStatus?.allowed || !text.trim()}>
+            <Button
+              onClick={sendMessage}
+              disabled={loading || !conversation || !rateLimitStatus?.allowed || !text.trim()}
+              className={cn(
+                chatMode === "provider" && "bg-blue-600 hover:bg-blue-700"
+              )}
+            >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>

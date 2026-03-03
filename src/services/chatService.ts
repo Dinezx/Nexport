@@ -303,14 +303,16 @@ export async function sendAiMessage(params: {
   bookingId: string;
   conversationId: string;
 }): Promise<any> {
-  // For offline conversations, generate a local AI response
-  if (params.conversationId.startsWith("conv-offline-") || params.bookingId.startsWith("offline-")) {
-    // Check if provider has joined this conversation
-    const existingMsgs = getOfflineMessages(params.conversationId);
-    const providerJoined = existingMsgs.some((m) => m.sender_role === "provider");
+  const isOfflineConv = params.conversationId.startsWith("conv-offline-") ||
+    params.conversationId.startsWith("provider-conv-offline-") ||
+    params.bookingId.startsWith("offline-");
 
-    if (providerJoined) {
-      // Provider is in the conversation — simulate provider reply
+  // Provider mode — conversation ID prefixed with "provider-"
+  const isProviderMode = params.conversationId.startsWith("provider-");
+
+  if (isOfflineConv) {
+    if (isProviderMode) {
+      // Provider mode — always generate provider reply
       const providerReply = generateOfflineProviderResponse(params.message, params.bookingId);
       const msg: Message = {
         id: `msg-${crypto.randomUUID()}`,
