@@ -1234,57 +1234,55 @@ export default function Booking() {
     if (!form.container_type || !form.container_size) return;
 
     setLoadingContainers(true);
+
+    const sizeFormatted = `${form.container_size}ft`;
+
+    // Helper: generate demo containers as offline fallback
+    const getDemoContainers = () => {
+      const totalCbm = form.container_size === "20" ? 33 : 67;
+      return [
+        {
+          id: `demo-${form.container_type}-${form.container_size}-1`,
+          container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}01`,
+          container_type: form.container_type,
+          container_size: sizeFormatted,
+          total_space_cbm: totalCbm,
+          available_space_cbm: totalCbm,
+          effective_available_cbm: totalCbm,
+          origin: form.origin || "Chennai Port, India",
+          transport_mode: form.transport,
+          status: "active",
+        },
+        {
+          id: `demo-${form.container_type}-${form.container_size}-2`,
+          container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}02`,
+          container_type: form.container_type,
+          container_size: sizeFormatted,
+          total_space_cbm: totalCbm,
+          available_space_cbm: Math.round(totalCbm * 0.6),
+          effective_available_cbm: Math.round(totalCbm * 0.6),
+          origin: form.origin || "Mumbai Port, India",
+          transport_mode: form.transport,
+          status: "active",
+        },
+      ];
+    };
+
     try {
-      // Skip if Supabase is unreachable — provide demo containers for offline mode
-      const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!, 3000);
-      if (!online) {
-        const sizeLabel = `${form.container_size}ft`;
-        const totalCbm = form.container_size === "20" ? 33 : 67;
-        const demoContainers = [
-          {
-            id: `demo-${form.container_type}-${form.container_size}-1`,
-            container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}01`,
-            container_type: form.container_type,
-            container_size: sizeLabel,
-            total_space_cbm: totalCbm,
-            available_space_cbm: totalCbm,
-            effective_available_cbm: totalCbm,
-            origin: form.origin || "Chennai Port, India",
-            destination: form.destination || "",
-            transport_mode: form.transport,
-            status: "active",
-          },
-          {
-            id: `demo-${form.container_type}-${form.container_size}-2`,
-            container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}02`,
-            container_type: form.container_type,
-            container_size: sizeLabel,
-            total_space_cbm: totalCbm,
-            available_space_cbm: Math.round(totalCbm * 0.6),
-            effective_available_cbm: Math.round(totalCbm * 0.6),
-            origin: form.origin || "Mumbai Port, India",
-            destination: form.destination || "",
-            transport_mode: form.transport,
-            status: "active",
-          },
-        ];
-        setAvailableContainers(demoContainers);
-        setLoadingContainers(false);
-        return;
-      }
+      // Try Supabase query directly (with a 6s timeout)
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
 
-      const sizeFormatted = `${form.container_size}ft`;
-
-      // Fetch containers using current DB fields
       const { data, error } = await supabase
         .from("containers")
         .select("*")
         .eq("container_type", form.container_type)
-        .eq("container_size", sizeFormatted);
+        .eq("container_size", sizeFormatted)
+        .abortSignal(controller.signal);
 
-      if (error) {
-        throw error;
-      }
+      clearTimeout(timer);
+
+      if (error) throw error;
 
       // Fetch pending bookings to account for reserved (held) space
       const containerIds = (data || []).map((c: any) => c.id);
@@ -1300,7 +1298,6 @@ export default function Booking() {
           for (const pb of pendingBookings) {
             if (!pb.container_id) continue;
             if (pb.booking_mode === "full") {
-              // Full booking hold = entire container
               pendingReserved[pb.container_id] = Infinity;
             } else {
               pendingReserved[pb.container_id] = (pendingReserved[pb.container_id] || 0) + (pb.allocated_cbm || 0);
@@ -1327,9 +1324,10 @@ export default function Booking() {
         );
       }
 
-      setAvailableContainers(filteredContainers);
+      setAvailableContainers(filteredContainers.length > 0 ? filteredContainers : getDemoContainers());
     } catch (err) {
-      setAvailableContainers([]);
+      console.warn("Container fetch failed, using demo containers:", err);
+      setAvailableContainers(getDemoContainers());
     } finally {
       setLoadingContainers(false);
     }
