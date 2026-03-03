@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getOfflineSession, isSupabaseReachable } from "@/lib/offlineAuth";
+import { saveOfflineBooking } from "@/services/bookingService";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   Card,
@@ -1233,14 +1235,52 @@ export default function Booking() {
 
     setLoadingContainers(true);
     try {
+      // Skip if Supabase is unreachable — provide demo containers for offline mode
+      const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!, 3000);
+      if (!online) {
+        const sizeLabel = `${form.container_size}ft`;
+        const totalCbm = form.container_size === "20" ? 33 : 67;
+        const demoContainers = [
+          {
+            id: `demo-${form.container_type}-${form.container_size}-1`,
+            container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}01`,
+            container_type: form.container_type,
+            container_size: sizeLabel,
+            total_space_cbm: totalCbm,
+            available_space_cbm: totalCbm,
+            effective_available_cbm: totalCbm,
+            origin: form.origin || "Chennai Port, India",
+            destination: form.destination || "",
+            transport_mode: form.transport,
+            status: "active",
+          },
+          {
+            id: `demo-${form.container_type}-${form.container_size}-2`,
+            container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}02`,
+            container_type: form.container_type,
+            container_size: sizeLabel,
+            total_space_cbm: totalCbm,
+            available_space_cbm: Math.round(totalCbm * 0.6),
+            effective_available_cbm: Math.round(totalCbm * 0.6),
+            origin: form.origin || "Mumbai Port, India",
+            destination: form.destination || "",
+            transport_mode: form.transport,
+            status: "active",
+          },
+        ];
+        setAvailableContainers(demoContainers);
+        setLoadingContainers(false);
+        return;
+      }
+
       const sizeFormatted = `${form.container_size}ft`;
 
-      // Fetch containers using current DB fields (type/size/current_location)
+      // Fetch containers using current DB fields
       const { data, error } = await supabase
         .from("containers")
         .select("*")
-        .eq("type", form.container_type)
-        .eq("size", sizeFormatted);
+        .eq("container_type", form.container_type)
+        .eq("container_size", sizeFormatted);
 
       if (error) {
         throw error;
@@ -1316,7 +1356,19 @@ export default function Booking() {
   useEffect(() => {
     if (step !== 4) return;
     setLoading(true);
-    // Fetch real ETA from AI function
+
+    // Use demo ETA values as quick fallback with optional AI enhancement
+    const demoEta: Record<string, { days: number; confidence: string }> = {
+      sea: { days: 18, confidence: "high" },
+      road: { days: 7, confidence: "medium" },
+      air: { days: 3, confidence: "high" },
+    };
+    const fallback = demoEta[form.transport as keyof typeof demoEta] || { days: 10, confidence: "medium" };
+
+    // Try AI ETA with a 5s timeout to avoid hanging
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+
     fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-eta`,
       {
@@ -1332,33 +1384,22 @@ export default function Booking() {
           booking_mode: form.booking_mode,
           cbm: form.space_cbm,
         }),
+        signal: controller.signal,
       }
     )
       .then((r) => r.json().catch(() => null))
       .then((eta) => {
+        clearTimeout(timer);
         if (eta && (eta.eta_days || eta.confidence)) {
           setEtaDays(eta.eta_days ?? null);
           setEtaConfidence(eta.confidence ?? null);
         } else {
-          // Fallback to demo values if AI fails
-          const demoEta = {
-            sea: { days: 18, confidence: "high" },
-            road: { days: 7, confidence: "medium" },
-            air: { days: 3, confidence: "high" },
-          };
-          const fallback = demoEta[form.transport as keyof typeof demoEta] || { days: 10, confidence: "medium" };
           setEtaDays(fallback.days);
           setEtaConfidence(fallback.confidence);
         }
       })
       .catch(() => {
-        // Fallback on error
-        const demoEta = {
-          sea: { days: 18, confidence: "high" },
-          road: { days: 7, confidence: "medium" },
-          air: { days: 3, confidence: "high" },
-        };
-        const fallback = demoEta[form.transport as keyof typeof demoEta] || { days: 10, confidence: "medium" };
+        clearTimeout(timer);
         setEtaDays(fallback.days);
         setEtaConfidence(fallback.confidence);
       })
@@ -1387,39 +1428,78 @@ export default function Booking() {
   const handleConfirm = async () => {
     setLoading(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!);
+
+    let userId: string | null = null;
+
+    if (online) {
+      const { data: { user } } = await supabase.auth.getUser();
+      userId = user?.id ?? null;
+    }
+
+    if (!userId) {
+      const offlineUser = getOfflineSession();
+      userId = offlineUser?.id ?? null;
+    }
+
+    if (!userId) {
+      setLoading(false);
+      alert("User not authenticated. Please log in again.");
+      return;
+    }
 
     const selectedContainer = availableContainers.find(c => c.id === form.selected_container_id);
 
-    const { data: booking, error } = await supabase
-      .from("bookings")
-      .insert({
-        exporter_id: user.id,
-        booking_date: form.booking_date,
-        origin: form.origin,
-        destination: form.destination,
-        transport_mode: form.transport,
-        cargo_type: form.cargo_type,
-        cargo_weight: form.cargo_weight
-          ? Number(form.cargo_weight)
-          : null,
-        container_id: form.selected_container_id || null,
-        container_number: selectedContainer?.container_number || null,
-        allocated_cbm: form.booking_mode === "partial"
-          ? Math.max(0, Number(form.space_cbm))
-          : selectedContainer?.total_space_cbm || null,
-        price: priceINR,
-        status: "pending_payment",
-      })
-      .select()
-      .single();
+    const bookingPayload = {
+      exporter_id: userId,
+      booking_date: form.booking_date,
+      origin: form.origin,
+      destination: form.destination,
+      transport_mode: form.transport,
+      cargo_type: form.cargo_type,
+      cargo_weight: form.cargo_weight
+        ? Number(form.cargo_weight)
+        : null,
+      container_id: form.selected_container_id || null,
+      container_number: selectedContainer?.container_number || null,
+      allocated_cbm: form.booking_mode === "partial"
+        ? Math.max(0, Number(form.space_cbm))
+        : selectedContainer?.total_space_cbm || null,
+      price: priceINR,
+      status: "pending_payment",
+    };
 
-    if (error || !booking) {
-      setLoading(false);
-      alert("Booking failed: " + (error?.message || "Unknown error. Please check your input and try again."));
-      return;
+    let booking: any = null;
+
+    if (online) {
+      const { data, error } = await supabase
+        .from("bookings")
+        .insert(bookingPayload)
+        .select()
+        .single();
+
+      if (error || !data) {
+        setLoading(false);
+        alert("Booking failed: " + (error?.message || "Unknown error. Please check your input and try again."));
+        return;
+      }
+      booking = data;
+    } else {
+      // Offline — store in localStorage
+      booking = {
+        ...bookingPayload,
+        id: "offline-" + crypto.randomUUID(),
+        created_at: new Date().toISOString(),
+        container_type: form.container_type,
+        container_size: form.container_size ? `${form.container_size}ft` : "",
+        booking_mode: form.booking_mode,
+        space_cbm: form.booking_mode === "partial" ? Number(form.space_cbm) : null,
+      };
+      saveOfflineBooking(booking);
     }
+
+    // --- Online-only operations (AI, containers, conversations) ---
+    if (online) {
 
     // Call AI ETA function (best-effort, non-blocking for the user)
     try {
@@ -1556,7 +1636,7 @@ export default function Booking() {
             .insert({
               booking_id: booking.id,
               container_id: form.selected_container_id,
-              exporter_id: user.id,
+              exporter_id: userId,
               provider_id: containerData.provider_id,
             })
             .select()
@@ -1570,7 +1650,7 @@ export default function Booking() {
               .from("messages")
               .insert({
                 conversation_id: conversation.id,
-                sender_id: user.id,
+                sender_id: userId,
                 sender_role: "system",
                 content: `Booking ${booking.id.slice(0, 8).toUpperCase()} has been created. You can coordinate shipment details here.`,
               });
@@ -1585,8 +1665,13 @@ export default function Booking() {
       }
     }
 
-    // 👉 Redirect to Mock Payment
+    // 👉 Redirect to Mock Payment (online)
     navigate(`/payment/${booking.id}`);
+
+    } else {
+      // 👉 Offline – redirect to bookings list
+      navigate("/exporter/bookings");
+    }
   };
 
   return (

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { getOfflineSession, offlineSignOut } from "@/lib/offlineAuth";
+import { getOfflineSession, offlineSignOut, isSupabaseReachable } from "@/lib/offlineAuth";
 
 type AuthUser = {
   id: string;
@@ -26,26 +26,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        // 1. Try Supabase session first
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        // Quick check: is Supabase even reachable? (4s timeout)
+        const online = await isSupabaseReachable(
+          import.meta.env.VITE_SUPABASE_URL!,
+          3000
+        );
 
-        if (session?.user) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("id, role")
-            .eq("id", session.user.id)
-            .single();
+        if (online) {
+          // 1. Try Supabase session
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
 
-          if (profile) {
-            setUser({ id: profile.id, role: profile.role });
-          } else {
-            const fallbackRole = localStorage.getItem("userRole") as AuthUser["role"] | null;
-            setUser({ id: session.user.id, role: fallbackRole || "exporter" });
+          if (session?.user) {
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("id, role")
+              .eq("id", session.user.id)
+              .single();
+
+            if (profile) {
+              setUser({ id: profile.id, role: profile.role });
+            } else {
+              const fallbackRole = localStorage.getItem("userRole") as AuthUser["role"] | null;
+              setUser({ id: session.user.id, role: fallbackRole || "exporter" });
+            }
+            setLoading(false);
+            return;
           }
-          setLoading(false);
-          return;
         }
       } catch (err) {
         console.warn("Auth: could not reach Supabase –", (err as Error).message);
@@ -65,9 +73,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event) => {
-      setLoading(true);
-      loadUser();
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Only reload if an actual session change occurred (not just a retry)
+      if (session?.user) {
+        setLoading(true);
+        loadUser();
+      } else if (_event === "SIGNED_OUT") {
+        setUser(null);
+        setLoading(false);
+      }
     });
 
     // Also listen for offline-auth-change (same-tab custom event)

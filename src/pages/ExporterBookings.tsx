@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getOfflineSession, isSupabaseReachable } from "@/lib/offlineAuth";
+import { getOfflineBookings, type OfflineBooking } from "@/services/bookingService";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,26 +56,46 @@ export default function ExporterBookings() {
   useEffect(() => {
     const fetchBookings = async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+        // Check if Supabase is reachable
+        const online = await isSupabaseReachable(
+          import.meta.env.VITE_SUPABASE_URL!
+        );
 
-        if (!user) {
-          setError("User not authenticated");
-          return;
+        if (online) {
+          // Online path — use Supabase
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
+          if (!user) {
+            setError("User not authenticated");
+            return;
+          }
+
+          setUserEmail(user.email ?? "");
+
+          const { data, error } = await supabase
+            .from("bookings")
+            .select("*")
+            .eq("exporter_id", user.id)
+            .order("created_at", { ascending: false });
+
+          if (error) throw error;
+
+          setBookings(data ?? []);
+        } else {
+          // Offline path — use localStorage
+          const offlineUser = getOfflineSession();
+          if (!offlineUser) {
+            setError("User not authenticated");
+            return;
+          }
+
+          setUserEmail(offlineUser.email ?? "");
+
+          const localBookings = getOfflineBookings(offlineUser.id);
+          setBookings(localBookings as Booking[]);
         }
-
-        setUserEmail(user.email ?? "");
-
-        const { data, error } = await supabase
-          .from("bookings")
-          .select("*")
-          .eq("exporter_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        setBookings(data ?? []);
       } catch (err) {
         console.error(err);
         setError("Failed to load bookings");

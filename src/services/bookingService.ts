@@ -1,5 +1,61 @@
 import { supabase } from "@/lib/supabase";
 
+/* ------------------------------------------------------------------ */
+/*  Offline booking storage (localStorage fallback when Supabase is   */
+/*  unreachable / paused)                                              */
+/* ------------------------------------------------------------------ */
+
+const OFFLINE_BOOKINGS_KEY = "nexport_offline_bookings";
+
+export type OfflineBooking = {
+  id: string;
+  exporter_id: string;
+  origin: string;
+  destination: string;
+  transport_mode: string;
+  container_type: string;
+  container_size: string;
+  booking_mode: string;
+  space_cbm: number | null;
+  price: number | null;
+  status: string;
+  created_at: string;
+  cargo_type?: string;
+  cargo_weight?: number | null;
+  container_id?: string | null;
+  container_number?: string | null;
+  allocated_cbm?: number | null;
+};
+
+export function getOfflineBookings(exporterId?: string): OfflineBooking[] {
+  try {
+    const all: OfflineBooking[] = JSON.parse(
+      localStorage.getItem(OFFLINE_BOOKINGS_KEY) || "[]"
+    );
+    if (exporterId) return all.filter((b) => b.exporter_id === exporterId);
+    return all;
+  } catch {
+    return [];
+  }
+}
+
+export function saveOfflineBooking(booking: OfflineBooking) {
+  const all = getOfflineBookings();
+  all.unshift(booking); // newest first
+  localStorage.setItem(OFFLINE_BOOKINGS_KEY, JSON.stringify(all));
+}
+
+export function updateOfflineBooking(id: string, patch: Partial<OfflineBooking>) {
+  const all = getOfflineBookings();
+  const idx = all.findIndex((b) => b.id === id);
+  if (idx !== -1) {
+    all[idx] = { ...all[idx], ...patch };
+    localStorage.setItem(OFFLINE_BOOKINGS_KEY, JSON.stringify(all));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+
 export type BookingMode = "full" | "partial";
 export type TransportMode = "sea" | "road" | "air";
 export type ContainerType = "normal" | "dry" | "reefer";
@@ -58,11 +114,10 @@ export async function fetchAvailableContainers(params: {
   let query = supabase
     .from("containers")
     .select("*")
-    .eq("current_location", origin)
+    .eq("origin", origin)
     .eq("transport_mode", transport)
-    .eq("type", type)
-    .eq("size", size)
-    .eq("status", "available")
+    .eq("container_type", type)
+    .eq("container_size", size)
     .order("created_at", { ascending: false });
 
   if (bookingMode === "partial" && requestedCbm > 0) {

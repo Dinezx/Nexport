@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase";
 import {
   isSupabaseReachable,
   offlineSignIn,
+  offlineSignUp,
 } from "@/lib/offlineAuth";
 
 type UserRole = "exporter" | "provider";
@@ -92,10 +93,29 @@ export default function Login() {
 
     // -- 2b. Offline path – local auth ------------------------------------
     setOffline(true);
-    const { user: localUser, error: localErr } = offlineSignIn(
+    let { user: localUser, error: localErr } = offlineSignIn(
       email.trim(),
       password
     );
+
+    // Auto-register in offline mode if the account doesn't exist yet
+    if (localErr) {
+      const { user: newUser, error: signUpErr } = offlineSignUp(
+        email.trim(),
+        password,
+        role
+      );
+      if (signUpErr || !newUser) {
+        setError(signUpErr || "Could not create offline account.");
+        setLoading(false);
+        return;
+      }
+      // Now sign in with the newly created account
+      ({ user: localUser, error: localErr } = offlineSignIn(
+        email.trim(),
+        password
+      ));
+    }
 
     if (localErr || !localUser) {
       setError(localErr || "Invalid credentials.");

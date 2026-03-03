@@ -18,6 +18,8 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { isSupabaseReachable } from "@/lib/offlineAuth";
+import { getOfflineBookings } from "@/services/bookingService";
 
 /* ---------- types ---------- */
 
@@ -90,34 +92,48 @@ export default function ExporterDashboard() {
     setError(null);
 
     try {
-      const { data: bk, error: bkErr } = await supabase
-        .from("bookings")
-        .select("*")
-        .eq("exporter_id", user.id)
-        .order("created_at", { ascending: false });
+      const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!);
 
-      if (bkErr) throw bkErr;
-      const rows = (bk ?? []) as Booking[];
-      setBookings(rows);
-
-      // Fetch latest tracking event per booking
-      const ids = rows.map((b) => b.id);
-      if (ids.length) {
-        const { data: events } = await supabase
-          .from("tracking_events")
+      if (online) {
+        const { data: bk, error: bkErr } = await supabase
+          .from("bookings")
           .select("*")
-          .in("booking_id", ids)
+          .eq("exporter_id", user.id)
           .order("created_at", { ascending: false });
 
-        const map: Record<string, TrackingEvent[]> = {};
-        (events ?? []).forEach((e: TrackingEvent) => {
-          if (!map[e.booking_id]) map[e.booking_id] = [];
-          map[e.booking_id].push(e);
-        });
-        setTrackingMap(map);
+        if (bkErr) throw bkErr;
+        const rows = (bk ?? []) as Booking[];
+        setBookings(rows);
+
+        // Fetch latest tracking event per booking
+        const ids = rows.map((b) => b.id);
+        if (ids.length) {
+          const { data: events } = await supabase
+            .from("tracking_events")
+            .select("*")
+            .in("booking_id", ids)
+            .order("created_at", { ascending: false });
+
+          const map: Record<string, TrackingEvent[]> = {};
+          (events ?? []).forEach((e: TrackingEvent) => {
+            if (!map[e.booking_id]) map[e.booking_id] = [];
+            map[e.booking_id].push(e);
+          });
+          setTrackingMap(map);
+        }
+      } else {
+        // Offline fallback — load from localStorage
+        const localBookings = getOfflineBookings(user.id);
+        setBookings(localBookings as Booking[]);
       }
     } catch (e: any) {
-      setError(e?.message || "Failed to load dashboard data");
+      // If Supabase query failed, try offline fallback
+      try {
+        const localBookings = getOfflineBookings(user.id);
+        setBookings(localBookings as Booking[]);
+      } catch {
+        setError(e?.message || "Failed to load dashboard data");
+      }
     } finally {
       setLoading(false);
     }
