@@ -1665,39 +1665,95 @@ export default function Booking() {
         })
       );
 
-      // --- Additionally update Supabase when online ---
-      if (online) {
-        try {
-          const { data: currentContainer, error: fetchError } = await supabase
+      // --- Always attempt Supabase DB update (best-effort) ---
+      // The selected container might be a "demo" with a fake ID, so we try
+      // multiple strategies: first by exact ID, then by container_number,
+      // then by matching type+size+origin.
+      try {
+        const sizeStr = form.container_size ? `${form.container_size}ft` : "";
+
+        // Strategy 1: Try by exact ID (works when DB containers were fetched)
+        let { data: dbContainer, error: dbErr } = await supabase
+          .from("containers")
+          .select("id, available_space_cbm, total_space_cbm")
+          .eq("id", form.selected_container_id)
+          .maybeSingle();
+
+        // Strategy 2: Try by container_number (demo containers copy this field)
+        if (!dbContainer && selectedContainer?.container_number) {
+          const res2 = await supabase
             .from("containers")
-            .select("available_space_cbm, total_space_cbm")
-            .eq("id", form.selected_container_id)
-            .single();
-
-          if (fetchError || !currentContainer) {
-            console.error("Failed to fetch container data:", fetchError);
-          } else {
-            const newAvailableSpace =
-              form.booking_mode === "full"
-                ? 0
-                : Math.max(0, currentContainer.available_space_cbm - allocatedCbm);
-            const newStatus = newAvailableSpace === 0 ? "full" : "active";
-
-            const { error: containerError } = await supabase
-              .from("containers")
-              .update({
-                available_space_cbm: newAvailableSpace,
-                status: newStatus,
-              })
-              .eq("id", form.selected_container_id);
-
-            if (containerError) {
-              console.error("Failed to update container space:", containerError);
-            }
-          }
-        } catch (err) {
-          console.error("Error updating container space on Supabase:", err);
+            .select("id, available_space_cbm, total_space_cbm")
+            .eq("container_number", selectedContainer.container_number)
+            .maybeSingle();
+          dbContainer = res2.data;
         }
+
+        // Strategy 3: Match by type + size + origin (broadest match)
+        if (!dbContainer) {
+          const originText = (form.origin || "").split(",")[0].trim();
+          let query = supabase
+            .from("containers")
+            .select("id, available_space_cbm, total_space_cbm, origin")
+            .eq("container_size", sizeStr);
+
+          // container_type column may not exist in all DBs, so try it
+          if (form.container_type) {
+            query = query.eq("container_type", form.container_type);
+          }
+
+          const { data: candidates } = await query;
+          if (candidates && candidates.length > 0) {
+            // Prefer one matching origin
+            dbContainer = candidates.find((c: any) =>
+              (c.origin || "").toLowerCase().includes(originText.toLowerCase())
+            ) || candidates[0];
+          }
+        }
+
+        if (dbContainer) {
+          const newAvailableSpace =
+            form.booking_mode === "full"
+              ? 0
+              : Math.max(0, (dbContainer.available_space_cbm ?? dbContainer.total_space_cbm ?? 0) - allocatedCbm);
+          const newStatus = newAvailableSpace === 0 ? "full" : "active";
+
+          const { error: updateErr } = await supabase
+            .from("containers")
+            .update({
+              available_space_cbm: newAvailableSpace,
+              status: newStatus,
+            })
+            .eq("id", dbContainer.id);
+
+          if (updateErr) {
+            console.error("Supabase container update failed (RLS?):", updateErr);
+            // Try with anon client as fallback
+            try {
+              const { createClient } = await import("@supabase/supabase-js");
+              const anonClient = createClient(
+                import.meta.env.VITE_SUPABASE_URL!,
+                import.meta.env.VITE_SUPABASE_ANON_KEY!,
+                { auth: { persistSession: false, autoRefreshToken: false } }
+              );
+              await anonClient
+                .from("containers")
+                .update({
+                  available_space_cbm: newAvailableSpace,
+                  status: newStatus,
+                })
+                .eq("id", dbContainer.id);
+            } catch (anonErr) {
+              console.error("Anon client container update also failed:", anonErr);
+            }
+          } else {
+            console.log("✅ Supabase container updated: available_space_cbm =", newAvailableSpace);
+          }
+        } else {
+          console.warn("Could not find matching DB container to update");
+        }
+      } catch (err) {
+        console.error("Error updating container space on Supabase:", err);
       }
     }
 
