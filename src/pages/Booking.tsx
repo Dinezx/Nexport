@@ -1416,17 +1416,19 @@ export default function Booking() {
 
       // Merge any localStorage space updates (from offline bookings) on top of DB data
       const CONTAINER_KEY_MERGE = "nexport_offline_containers";
-      let localUpdates: Record<string, any> = {};
+      let localUpdatesById: Record<string, any> = {};
+      let localUpdatesByNumber: Record<string, any> = {};
       try {
         const localStored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY_MERGE) || "[]");
         for (const lc of localStored) {
-          if (lc.id) localUpdates[lc.id] = lc;
+          if (lc?.id) localUpdatesById[String(lc.id)] = lc;
+          if (lc?.container_number) localUpdatesByNumber[String(lc.container_number)] = lc;
         }
       } catch { /* ignore parse errors */ }
 
       // Calculate effective available space (minus pending holds), with localStorage overlay
       let filteredContainers = data.map((c: any) => {
-        const local = localUpdates[c.id];
+        const local = localUpdatesById[String(c.id)] || (c?.container_number ? localUpdatesByNumber[String(c.container_number)] : undefined);
         const availSpace = local
           ? (local.available_space_cbm ?? c.available_space_cbm ?? 0)
           : (c.available_space_cbm ?? 0);
@@ -1627,10 +1629,17 @@ export default function Booking() {
       try {
         const CONTAINER_KEY = "nexport_offline_containers";
         const stored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY) || "[]");
-        const idx = stored.findIndex((c: any) => c.id === form.selected_container_id);
+        const idx = stored.findIndex((c: any) =>
+          c?.id === form.selected_container_id ||
+          (!!selectedContainer?.container_number && c?.container_number === selectedContainer.container_number)
+        );
 
         const ctr = idx !== -1 ? stored[idx] : selectedContainer ? { ...selectedContainer } : null;
         if (ctr) {
+          // Ensure container_number exists for matching DB rows later
+          if (!ctr.container_number && selectedContainer?.container_number) {
+            ctr.container_number = selectedContainer.container_number;
+          }
           ctr.available_space_cbm =
             form.booking_mode === "full"
               ? 0
@@ -1717,6 +1726,27 @@ export default function Booking() {
               ? 0
               : Math.max(0, (dbContainer.available_space_cbm ?? dbContainer.total_space_cbm ?? 0) - allocatedCbm);
           const newStatus = newAvailableSpace === 0 ? "full" : "active";
+
+          // Also persist the same update under the real DB container id in localStorage,
+          // so future DB reads can be overlaid even if this UPDATE is blocked by RLS.
+          try {
+            const CONTAINER_KEY = "nexport_offline_containers";
+            const stored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY) || "[]");
+            const existingIdx = stored.findIndex((c: any) => c?.id === dbContainer.id);
+            const base = existingIdx !== -1 ? stored[existingIdx] : (selectedContainer ? { ...selectedContainer } : {});
+            const updated = {
+              ...base,
+              id: dbContainer.id,
+              container_number: (base as any).container_number || selectedContainer?.container_number,
+              available_space_cbm: newAvailableSpace,
+              status: newStatus,
+            };
+            if (existingIdx !== -1) stored[existingIdx] = updated;
+            else stored.push(updated);
+            localStorage.setItem(CONTAINER_KEY, JSON.stringify(stored));
+          } catch {
+            // ignore localStorage failures
+          }
 
           const { error: updateErr } = await supabase
             .from("containers")
@@ -2126,7 +2156,7 @@ export default function Booking() {
                                 </div>
                                 <div className="text-sm text-muted-foreground">
                                   {form.booking_mode === "partial"
-                                    ? `Available: ${container.available_space_cbm ?? '—'} CBM / Total: ${container.total_space_cbm ?? '—'} CBM`
+                                    ? `Available: ${container.effective_available_cbm ?? container.available_space_cbm ?? '—'} CBM / Total: ${container.total_space_cbm ?? '—'} CBM`
                                     : `Total Space: ${container.total_space_cbm ?? '—'} CBM`
                                   }
                                 </div>
@@ -2140,7 +2170,9 @@ export default function Booking() {
                               <div className="text-right">
                                 <div className="text-sm font-medium">
                                   {(() => {
-                                    const used = (container.total_space_cbm - (container.available_space_cbm ?? container.total_space_cbm)) / container.total_space_cbm * 100;
+                                    const total = container.total_space_cbm ?? 0;
+                                    const effectiveAvail = container.effective_available_cbm ?? container.available_space_cbm ?? total;
+                                    const used = total > 0 ? ((total - effectiveAvail) / total) * 100 : 0;
                                     return `${used.toFixed(1)}% Used`;
                                   })()}
                                 </div>
@@ -2152,11 +2184,16 @@ export default function Booking() {
                           <Input
                             type="number"
                             min={0}
-                            max={availableContainers.find(c => c.id === form.selected_container_id)?.available_space_cbm || 0}
+                            max={(
+                              availableContainers.find(c => c.id === form.selected_container_id)?.effective_available_cbm ??
+                              availableContainers.find(c => c.id === form.selected_container_id)?.available_space_cbm ??
+                              0
+                            )}
                             placeholder="Enter CBM (max available)"
                             value={form.space_cbm}
                             onChange={(e) => {
-                              const maxAvailable = availableContainers.find(c => c.id === form.selected_container_id)?.available_space_cbm || 0;
+                              const selected = availableContainers.find(c => c.id === form.selected_container_id);
+                              const maxAvailable = selected?.effective_available_cbm ?? selected?.available_space_cbm ?? 0;
                               const value = Math.min(Number(e.target.value), maxAvailable);
                               setForm({
                                 ...form,
