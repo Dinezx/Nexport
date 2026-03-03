@@ -104,8 +104,18 @@ export default function Chat() {
     if (!conversation || !user) return;
     const loadMessages = async () => {
       try {
-        const limitStatus = await checkRateLimit(supabase as any, user.id);
-        setRateLimitStatus(limitStatus);
+        // Rate limit: skip for offline conversations, allow by default
+        if (conversation.id.startsWith("conv-offline-")) {
+          setRateLimitStatus({ allowed: true, remaining: 99, resetAt: new Date(Date.now() + 3600000) });
+        } else {
+          try {
+            const limitStatus = await checkRateLimit(supabase as any, user.id);
+            setRateLimitStatus(limitStatus);
+          } catch {
+            // Offline fallback — allow messaging
+            setRateLimitStatus({ allowed: true, remaining: 99, resetAt: new Date(Date.now() + 3600000) });
+          }
+        }
 
         const msgData = await fetchConversationMessages(conversation.id);
         setMessages(msgData || []);
@@ -147,11 +157,18 @@ export default function Chat() {
   const sendMessage = async () => {
     if (!text.trim() || !conversation || !user) return;
     
-    const limitStatus = await checkRateLimit(supabase as any, user.id);
-    setRateLimitStatus(limitStatus);
+    let limitStatus = rateLimitStatus;
+    if (!conversation.id.startsWith("conv-offline-")) {
+      try {
+        limitStatus = await checkRateLimit(supabase as any, user.id);
+        setRateLimitStatus(limitStatus);
+      } catch {
+        limitStatus = { allowed: true, remaining: 99, resetAt: new Date(Date.now() + 3600000) };
+      }
+    }
     
-    if (!limitStatus.allowed) {
-      setRateLimitError(limitStatus.message || "Rate limit exceeded");
+    if (!limitStatus?.allowed) {
+      setRateLimitError(limitStatus?.message || "Rate limit exceeded");
       return;
     }
     
@@ -216,11 +233,19 @@ export default function Chat() {
         } else {
           setAiThinking(true);
           try {
-            await sendAiMessage({
+            const aiResult = await sendAiMessage({
               message: messageText,
               bookingId: conversation.booking_id,
               conversationId: conversation.id,
             });
+
+            // For offline conversations, the AI reply comes back directly
+            if (aiResult?.offlineMessage) {
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === aiResult.offlineMessage.id)) return prev;
+                return [...prev, aiResult.offlineMessage];
+              });
+            }
             
             await logTokenUsage(supabase as any, {
               userId: user.id,
