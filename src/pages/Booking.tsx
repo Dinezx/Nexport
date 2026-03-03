@@ -1725,8 +1725,8 @@ export default function Booking() {
     navigate(`/payment/${booking.id}`);
 
     } else {
-      // 👉 Offline – redirect to bookings list
-      navigate("/exporter/bookings");
+      // 👉 Offline – redirect to payment page
+      navigate(`/payment/${booking.id}`);
     }
   };
 
