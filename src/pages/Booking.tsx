@@ -1273,7 +1273,15 @@ export default function Booking() {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 6000);
 
-      const { data, error } = await supabase
+      // Use a fresh client to avoid auth token issues blocking the query
+      const { createClient } = await import("@supabase/supabase-js");
+      const anonClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL!,
+        import.meta.env.VITE_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false, autoRefreshToken: false } }
+      );
+
+      const { data, error } = await anonClient
         .from("containers")
         .select("*")
         .eq("container_type", form.container_type)
@@ -1282,7 +1290,12 @@ export default function Booking() {
 
       clearTimeout(timer);
 
-      if (error) throw error;
+      if (error) {
+        console.warn("Container query error:", error);
+        throw error;
+      }
+
+      console.log("Containers fetched:", data?.length, "rows for", form.container_type, sizeFormatted);
 
       // Fetch pending bookings to account for reserved (held) space
       const containerIds = (data || []).map((c: any) => c.id);
@@ -1324,7 +1337,7 @@ export default function Booking() {
         );
       }
 
-      setAvailableContainers(filteredContainers.length > 0 ? filteredContainers : getDemoContainers());
+      setAvailableContainers(filteredContainers);
     } catch (err) {
       console.warn("Container fetch failed, using demo containers:", err);
       setAvailableContainers(getDemoContainers());
