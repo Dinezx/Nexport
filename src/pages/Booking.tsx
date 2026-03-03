@@ -1414,11 +1414,30 @@ export default function Booking() {
         // Ignore pending bookings errors — just show containers as-is
       }
 
-      // Calculate effective available space (minus pending holds)
-      let filteredContainers = data.map((c: any) => ({
-        ...c,
-        effective_available_cbm: Math.max(0, (c.available_space_cbm || 0) - (pendingReserved[c.id] || 0)),
-      }));
+      // Merge any localStorage space updates (from offline bookings) on top of DB data
+      const CONTAINER_KEY_MERGE = "nexport_offline_containers";
+      let localUpdates: Record<string, any> = {};
+      try {
+        const localStored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY_MERGE) || "[]");
+        for (const lc of localStored) {
+          if (lc.id) localUpdates[lc.id] = lc;
+        }
+      } catch { /* ignore parse errors */ }
+
+      // Calculate effective available space (minus pending holds), with localStorage overlay
+      let filteredContainers = data.map((c: any) => {
+        const local = localUpdates[c.id];
+        const availSpace = local
+          ? (local.available_space_cbm ?? c.available_space_cbm ?? 0)
+          : (c.available_space_cbm ?? 0);
+        const status = local?.status || c.status;
+        return {
+          ...c,
+          available_space_cbm: availSpace,
+          status,
+          effective_available_cbm: Math.max(0, availSpace - (pendingReserved[c.id] || 0)),
+        };
+      });
 
       // Filter by origin location — only show containers at/near the selected origin
       const selectedOrigin = (form.origin || "").toLowerCase();
@@ -1604,6 +1623,49 @@ export default function Booking() {
           ? Math.max(0, Number(form.space_cbm))
           : selectedContainer?.total_space_cbm ?? 0;
 
+      // --- Always update localStorage so demo/fallback containers stay in sync ---
+      try {
+        const CONTAINER_KEY = "nexport_offline_containers";
+        const stored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY) || "[]");
+        const idx = stored.findIndex((c: any) => c.id === form.selected_container_id);
+
+        const ctr = idx !== -1 ? stored[idx] : selectedContainer ? { ...selectedContainer } : null;
+        if (ctr) {
+          ctr.available_space_cbm =
+            form.booking_mode === "full"
+              ? 0
+              : Math.max(0, (ctr.available_space_cbm ?? ctr.total_space_cbm ?? 0) - allocatedCbm);
+          ctr.status = ctr.available_space_cbm === 0 ? "full" : "active";
+
+          if (idx !== -1) {
+            stored[idx] = ctr;
+          } else {
+            stored.push(ctr);
+          }
+          localStorage.setItem(CONTAINER_KEY, JSON.stringify(stored));
+        }
+      } catch (err) {
+        console.error("Error updating localStorage container space:", err);
+      }
+
+      // --- Also update the in-memory state so UI reflects immediately ---
+      setAvailableContainers(prev =>
+        prev.map(c => {
+          if (c.id !== form.selected_container_id) return c;
+          const newAvail =
+            form.booking_mode === "full"
+              ? 0
+              : Math.max(0, (c.available_space_cbm ?? c.total_space_cbm ?? 0) - allocatedCbm);
+          return {
+            ...c,
+            available_space_cbm: newAvail,
+            effective_available_cbm: newAvail,
+            status: newAvail === 0 ? "full" : "active",
+          };
+        })
+      );
+
+      // --- Additionally update Supabase when online ---
       if (online) {
         try {
           const { data: currentContainer, error: fetchError } = await supabase
@@ -1634,32 +1696,7 @@ export default function Booking() {
             }
           }
         } catch (err) {
-          console.error("Error updating container space:", err);
-        }
-      } else {
-        // Offline / demo container — persist in localStorage
-        try {
-          const CONTAINER_KEY = "nexport_offline_containers";
-          const stored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY) || "[]");
-          const idx = stored.findIndex((c: any) => c.id === form.selected_container_id);
-
-          const ctr = idx !== -1 ? stored[idx] : selectedContainer ? { ...selectedContainer } : null;
-          if (ctr) {
-            ctr.available_space_cbm =
-              form.booking_mode === "full"
-                ? 0
-                : Math.max(0, (ctr.available_space_cbm ?? ctr.total_space_cbm ?? 0) - allocatedCbm);
-            ctr.status = ctr.available_space_cbm === 0 ? "full" : "active";
-
-            if (idx !== -1) {
-              stored[idx] = ctr;
-            } else {
-              stored.push(ctr);
-            }
-            localStorage.setItem(CONTAINER_KEY, JSON.stringify(stored));
-          }
-        } catch (err) {
-          console.error("Error updating offline container space:", err);
+          console.error("Error updating container space on Supabase:", err);
         }
       }
     }
@@ -1808,26 +1845,33 @@ export default function Booking() {
         <h1 className="text-3xl font-bold">New Booking</h1>
 
         {/* Step Indicator */}
-        <div className="flex justify-between">
-          {steps.map((s) => (
-            <div key={s.number} className="flex flex-col items-center">
-              <div
-                className={cn(
-                  "h-10 w-10 rounded-full flex items-center justify-center font-bold transition-all duration-300",
-                  step >= s.number
-                    ? "bg-primary text-primary-foreground shadow-md scale-110"
-                    : "bg-muted"
-                )}
-              >
-                {step > s.number ? <Check className="animate-scale-in" /> : s.number}
+        <div className="flex items-center justify-between gap-4">
+          {steps.map((s, i) => (
+            <div key={s.number} className="flex items-center flex-1 last:flex-none">
+              <div className="flex flex-col items-center">
+                <div
+                  className={cn(
+                    "h-10 w-10 rounded-full flex items-center justify-center font-bold transition-all duration-300",
+                    step >= s.number
+                      ? "bg-primary text-primary-foreground shadow-md scale-110"
+                      : "bg-muted"
+                  )}
+                >
+                  {step > s.number ? <Check className="animate-scale-in" /> : s.number}
+                </div>
+                <span className={cn(
+                  "text-xs mt-2 transition-colors duration-300",
+                  step >= s.number ? "text-primary font-medium" : "text-muted-foreground"
+                )}>{s.label}</span>
               </div>
-              <span className={cn(
-                "text-xs mt-2 transition-colors duration-300",
-                step >= s.number ? "text-primary font-medium" : "text-muted-foreground"
-              )}>{s.label}</span>
-              {/* Progress line */}
-              {s.number < steps.length && (
-                <div className="hidden" />
+              {/* Connector line */}
+              {i < steps.length - 1 && (
+                <div className="flex-1 mx-3 mt-[-1rem]">
+                  <div className={cn(
+                    "h-0.5 w-full rounded-full transition-all duration-500",
+                    step > s.number ? "bg-primary" : "bg-muted"
+                  )} />
+                </div>
               )}
             </div>
           ))}
@@ -1845,7 +1889,7 @@ export default function Booking() {
 
             {/* STEP 1 – ROUTE */}
             {step === 1 && (
-              <div className="animate-fade-in">
+              <div className="animate-fade-in space-y-5">
                 <Label>Booking Date</Label>
                 <Input
                   type="date"
@@ -1916,7 +1960,7 @@ export default function Booking() {
 
             {/* STEP 2 – CARGO */}
             {step === 2 && (
-              <div className="animate-fade-in">
+              <div className="animate-fade-in space-y-5">
                 <Label>Cargo Type</Label>
                 <div className="grid grid-cols-2 gap-3">
                   {cargoTypes.map(c => (
@@ -1947,7 +1991,7 @@ export default function Booking() {
 
             {/* STEP 3 – CONTAINER */}
             {step === 3 && (
-              <div className="animate-fade-in">
+              <div className="animate-fade-in space-y-5">
                 <Label>Booking Mode</Label>
                 <div className="grid grid-cols-2 gap-3">
                   {(["full", "partial"] as const).map(m => (
@@ -2078,7 +2122,7 @@ export default function Booking() {
 
             {/* STEP 4 – SUMMARY */}
             {step === 4 && (
-              <div className="animate-fade-in space-y-2">
+              <div className="animate-fade-in space-y-4">
                 <p><b>Date:</b> {form.booking_date}</p>
                 <p><b>Route:</b> {form.origin} → {form.destination}</p>
                 <p><b>Transport:</b> {form.transport}</p>
