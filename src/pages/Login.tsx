@@ -140,16 +140,16 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-secondary/30 px-4 py-12">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md animate-slide-up-fade">
         {/* Logo */}
-        <Link to="/" className="flex items-center justify-center gap-2 mb-8">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
+        <Link to="/" className="flex items-center justify-center gap-2 mb-8 group">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
             <Package className="h-5 w-5 text-primary-foreground" />
           </div>
           <span className="text-2xl font-bold">NEXPORT</span>
         </Link>
 
-        <Card>
+        <Card className="gradient-border">
           <CardHeader className="text-center">
             <CardTitle className="text-2xl">Welcome Back</CardTitle>
             <CardDescription>Sign in using your account</CardDescription>
@@ -171,10 +171,10 @@ export default function Login() {
                   type="button"
                   onClick={() => setRole("exporter")}
                   className={cn(
-                    "flex items-center justify-center gap-2 rounded-lg border-2 p-4",
+                    "flex items-center justify-center gap-2 rounded-lg border-2 p-4 transition-all duration-200 hover:shadow-md",
                     role === "exporter"
-                      ? "border-primary bg-primary/5"
-                      : "border-border"
+                      ? "border-primary bg-primary/5 shadow-sm scale-[1.02]"
+                      : "border-border hover:border-primary/40"
                   )}
                 >
                   <User className="h-5 w-5" />
@@ -185,10 +185,10 @@ export default function Login() {
                   type="button"
                   onClick={() => setRole("provider")}
                   className={cn(
-                    "flex items-center justify-center gap-2 rounded-lg border-2 p-4",
+                    "flex items-center justify-center gap-2 rounded-lg border-2 p-4 transition-all duration-200 hover:shadow-md",
                     role === "provider"
-                      ? "border-primary bg-primary/5"
-                      : "border-border"
+                      ? "border-primary bg-primary/5 shadow-sm scale-[1.02]"
+                      : "border-border hover:border-primary/40"
                   )}
                 >
                   <Truck className="h-5 w-5" />

@@ -415,25 +415,25 @@ export default function Chat() {
                 <button
                   onClick={() => switchMode("ai")}
                   className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-all duration-200",
                     chatMode === "ai"
                       ? "text-primary border-b-2 border-primary bg-primary/5"
                       : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                   )}
                 >
-                  <Bot className="h-4 w-4" />
+                  <Bot className={cn("h-4 w-4 transition-transform duration-200", chatMode === "ai" && "scale-110")} />
                   AI Assistant
                 </button>
                 <button
                   onClick={() => switchMode("provider")}
                   className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-all duration-200",
                     chatMode === "provider"
                       ? "text-blue-400 border-b-2 border-blue-400 bg-blue-400/5"
                       : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
                   )}
                 >
-                  <Truck className="h-4 w-4" />
+                  <Truck className={cn("h-4 w-4 transition-transform duration-200", chatMode === "provider" && "scale-110")} />
                   Provider
                 </button>
               </div>
@@ -489,12 +489,12 @@ export default function Chat() {
               <div
                 key={msg.id}
                 className={cn(
-                  "flex gap-3 group",
-                  isOwnMessage(msg) && "flex-row-reverse"
+                  "flex gap-3 group animate-fade-in",
+                  isOwnMessage(msg) ? "flex-row-reverse" : ""
                 )}
               >
                 <div className={cn(
-                  "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0",
+                  "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-110",
                   msg.sender_role === "provider" ? "bg-blue-900/50" :
                   msg.sender_role === "ai" ? "bg-primary/10" :
                   "bg-zinc-700"
@@ -511,7 +511,7 @@ export default function Chat() {
                 </div>
                 <div className="flex flex-col gap-1 max-w-[70%]">
                   <div className={cn(
-                    "px-4 py-2 rounded-lg",
+                    "px-4 py-2 rounded-lg transition-shadow duration-200 group-hover:shadow-md",
                     msg.sender_role === "system" ? "bg-zinc-800/50 border border-zinc-700" :
                     msg.sender_role === "ai" ? "bg-zinc-800 border border-primary/20" :
                     msg.sender_role === "provider" ? "bg-blue-900/20 border border-blue-800/30" :

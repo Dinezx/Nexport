@@ -1747,20 +1747,27 @@ export default function Booking() {
             <div key={s.number} className="flex flex-col items-center">
               <div
                 className={cn(
-                  "h-10 w-10 rounded-full flex items-center justify-center font-bold",
+                  "h-10 w-10 rounded-full flex items-center justify-center font-bold transition-all duration-300",
                   step >= s.number
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-primary text-primary-foreground shadow-md scale-110"
                     : "bg-muted"
                 )}
               >
-                {step > s.number ? <Check /> : s.number}
+                {step > s.number ? <Check className="animate-scale-in" /> : s.number}
               </div>
-              <span className="text-xs mt-2">{s.label}</span>
+              <span className={cn(
+                "text-xs mt-2 transition-colors duration-300",
+                step >= s.number ? "text-primary font-medium" : "text-muted-foreground"
+              )}>{s.label}</span>
+              {/* Progress line */}
+              {s.number < steps.length && (
+                <div className="hidden" />
+              )}
             </div>
           ))}
         </div>
 
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Booking Details</CardTitle>
             <CardDescription>
@@ -1772,7 +1779,7 @@ export default function Booking() {
 
             {/* STEP 1 – ROUTE */}
             {step === 1 && (
-              <>
+              <div className="animate-fade-in">
                 <Label>Booking Date</Label>
                 <Input
                   type="date"
@@ -1787,11 +1794,11 @@ export default function Booking() {
                       key={m.id}
                       onClick={() => setForm({ ...form, transport: m.id })}
                       className={cn(
-                        "p-4 border rounded-lg",
-                        form.transport === m.id && "border-primary bg-primary/10"
+                        "p-4 border rounded-lg transition-all duration-200 hover:shadow-md",
+                        form.transport === m.id ? "border-primary bg-primary/10 shadow-sm scale-[1.02]" : "hover:border-primary/40"
                       )}
                     >
-                      <m.icon className="mx-auto mb-2" />
+                      <m.icon className={cn("mx-auto mb-2 transition-transform duration-200", form.transport === m.id && "scale-110")} />
                       {m.label}
                     </button>
                   ))}
@@ -1838,12 +1845,12 @@ export default function Booking() {
                     </div>
                   </>
                 )}
-              </>
+              </div>
             )}
 
             {/* STEP 2 – CARGO */}
             {step === 2 && (
-              <>
+              <div className="animate-fade-in">
                 <Label>Cargo Type</Label>
                 <div className="grid grid-cols-2 gap-3">
                   {cargoTypes.map(c => (
@@ -1869,12 +1876,12 @@ export default function Booking() {
                     setForm({ ...form, cargo_weight: e.target.value })
                   }
                 />
-              </>
+              </div>
             )}
 
             {/* STEP 3 – CONTAINER */}
             {step === 3 && (
-              <>
+              <div className="animate-fade-in">
                 <Label>Booking Mode</Label>
                 <div className="grid grid-cols-2 gap-3">
                   {(["full", "partial"] as const).map(m => (
@@ -1939,10 +1946,10 @@ export default function Booking() {
                           <div
                             key={container.id}
                             className={cn(
-                              "p-4 border rounded-lg cursor-pointer transition-colors",
+                              "p-4 border rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md",
                               form.selected_container_id === container.id
-                                ? "border-primary bg-primary/10"
-                                : "border-border hover:bg-muted/50"
+                                ? "border-primary bg-primary/10 shadow-sm scale-[1.01]"
+                                : "border-border hover:bg-muted/50 hover:border-primary/30"
                             )}
                             onClick={() => setForm({ ...form, selected_container_id: container.id })}
                           >
@@ -2000,12 +2007,12 @@ export default function Booking() {
                     )}
                   </>
                 )}
-              </>
+              </div>
             )}
 
             {/* STEP 4 – SUMMARY */}
             {step === 4 && (
-              <>
+              <div className="animate-fade-in space-y-2">
                 <p><b>Date:</b> {form.booking_date}</p>
                 <p><b>Route:</b> {form.origin} → {form.destination}</p>
                 <p><b>Transport:</b> {form.transport}</p>
@@ -2102,7 +2109,7 @@ export default function Booking() {
                 <p className="text-xl font-bold text-primary">
                   ₹ {priceINR.toLocaleString("en-IN")}
                 </p>
-              </>
+              </div>
             )}
 
             {/* NAV */}

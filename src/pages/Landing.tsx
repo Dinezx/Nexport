@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import heroImage from "@/assets/hero-logistics.png";
+import { useScrollReveal } from "@/hooks/useScrollReveal";
 
 const features = [
   {
@@ -73,6 +74,10 @@ const howItWorks = [
 ];
 
 export default function Landing() {
+  const featuresRef = useScrollReveal();
+  const howItWorksRef = useScrollReveal();
+  const ctaRef = useScrollReveal();
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -81,30 +86,30 @@ export default function Landing() {
       <section className="relative pt-32 pb-20 px-4 hero-gradient overflow-hidden">
         <div className="container mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8 animate-fade-in">
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm font-medium text-primary">
+            <div className="space-y-8 animate-fade-in-up">
+              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm font-medium text-primary animate-scale-in-bounce">
                 <Globe className="h-4 w-4" />
                 Global Logistics Platform
               </div>
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-tight">
                 Ship Smarter,{" "}
-                <span className="text-primary">Grow Faster</span>
+                <span className="text-primary bg-clip-text">Grow Faster</span>
               </h1>
-              <p className="text-xl text-muted-foreground max-w-lg">
+              <p className="text-xl text-muted-foreground max-w-lg opacity-0 animate-fade-in" style={{ animationDelay: "200ms" }}>
                 NEXPORT connects traders with trusted logistics providers for seamless container shipping worldwide.
               </p>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button size="xl" asChild>
+              <div className="flex flex-col sm:flex-row gap-4 opacity-0 animate-fade-in" style={{ animationDelay: "400ms" }}>
+                <Button size="xl" asChild className="btn-glow group">
                   <Link to="/signup">
                     Get Started Free
-                    <ArrowRight className="ml-2 h-5 w-5" />
+                    <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
                   </Link>
                 </Button>
-                <Button size="xl" variant="hero-outline" asChild>
+                <Button size="xl" variant="hero-outline" asChild className="group">
                   <Link to="/login">Watch Demo</Link>
                 </Button>
               </div>
-              <div className="flex items-center gap-8 text-sm text-muted-foreground">
+              <div className="flex items-center gap-8 text-sm text-muted-foreground opacity-0 animate-fade-in" style={{ animationDelay: "600ms" }}>
                 <div className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-success" />
                   100% Free to use
@@ -120,9 +125,9 @@ export default function Landing() {
                 <img
                   src={heroImage}
                   alt="Global logistics network visualization"
-                  className="w-full rounded-2xl shadow-2xl"
+                  className="w-full rounded-2xl shadow-2xl transition-transform duration-500 hover:scale-[1.02]"
                 />
-                <div className="absolute -bottom-6 -left-6 bg-card rounded-xl p-4 shadow-lg border animate-float">
+                <div className="absolute -bottom-6 -left-6 bg-card rounded-xl p-4 shadow-lg border animate-float gradient-border">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center">
                       <Truck className="h-5 w-5 text-success" />
@@ -141,23 +146,22 @@ export default function Landing() {
 
       {/* Features Section */}
       <section id="features" className="py-24 px-4">
-        <div className="container mx-auto">
-          <div className="text-center max-w-2xl mx-auto mb-16">
+        <div className="container mx-auto" ref={featuresRef}>
+          <div className="text-center max-w-2xl mx-auto mb-16 reveal">
             <h2 className="text-4xl font-bold mb-4">Everything You Need</h2>
             <p className="text-lg text-muted-foreground">
               Powerful features to streamline your logistics operations
             </p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 stagger-children reveal">
             {features.map((feature, index) => (
               <Card 
                 key={feature.title} 
                 variant="interactive"
-                className="animate-fade-in"
-                style={{ animationDelay: `${index * 100}ms` }}
+                className="card-interactive group"
               >
                 <CardHeader>
-                  <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                  <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
                     <feature.icon className="h-6 w-6 text-primary" />
                   </div>
                   <CardTitle>{feature.title}</CardTitle>
@@ -171,21 +175,21 @@ export default function Landing() {
 
       {/* How It Works Section */}
       <section id="how-it-works" className="py-24 px-4 bg-secondary/30">
-        <div className="container mx-auto">
-          <div className="text-center max-w-2xl mx-auto mb-16">
+        <div className="container mx-auto" ref={howItWorksRef}>
+          <div className="text-center max-w-2xl mx-auto mb-16 reveal">
             <h2 className="text-4xl font-bold mb-4">How It Works</h2>
             <p className="text-lg text-muted-foreground">
               Get started in minutes with our simple 4-step process
             </p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 stagger-children reveal">
             {howItWorks.map((item, index) => (
-              <div key={item.step} className="relative">
-                <div className="text-6xl font-bold text-primary/10 mb-4">{item.step}</div>
+              <div key={item.step} className="relative group">
+                <div className="text-6xl font-bold text-primary/10 mb-4 transition-colors duration-300 group-hover:text-primary/25">{item.step}</div>
                 <h3 className="text-xl font-bold mb-2">{item.title}</h3>
                 <p className="text-muted-foreground">{item.description}</p>
                 {index < howItWorks.length - 1 && (
-                  <ArrowRight className="hidden lg:block absolute top-8 -right-4 h-6 w-6 text-primary/30" />
+                  <ArrowRight className="hidden lg:block absolute top-8 -right-4 h-6 w-6 text-primary/30 transition-transform duration-300 group-hover:translate-x-1" />
                 )}
               </div>
             ))}
@@ -194,16 +198,16 @@ export default function Landing() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-24 px-4 bg-foreground text-background">
-        <div className="container mx-auto text-center">
+      <section className="py-24 px-4 bg-foreground text-background overflow-hidden">
+        <div className="container mx-auto text-center reveal" ref={ctaRef}>
           <h2 className="text-4xl font-bold mb-4">Ready to Transform Your Logistics?</h2>
           <p className="text-lg text-background/70 mb-8 max-w-xl mx-auto">
             Join thousands of businesses already shipping smarter with NEXPORT.
           </p>
-          <Button size="xl" variant="default" asChild>
+          <Button size="xl" variant="default" asChild className="btn-glow group">
             <Link to="/signup">
               Get Started Free
-              <ArrowRight className="ml-2 h-5 w-5" />
+              <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
             </Link>
           </Button>
         </div>

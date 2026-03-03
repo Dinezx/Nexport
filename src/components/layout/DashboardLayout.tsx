@@ -125,13 +125,16 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
                     <Link
                       to={link.href}
                       className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group",
                         isActive
-                          ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-1"
                       )}
                     >
-                      <link.icon className="h-5 w-5 shrink-0" />
+                      <link.icon className={cn(
+                        "h-5 w-5 shrink-0 transition-transform duration-200",
+                        !isActive && "group-hover:scale-110"
+                      )} />
                       {!collapsed && <span>{link.label}</span>}
                     </Link>
                   </li>
@@ -154,7 +157,7 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
           {/* Collapse Toggle */}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md"
+            className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform duration-200 hover:scale-125"
           >
             {collapsed ? (
               <ChevronRight className="h-4 w-4" />
@@ -172,7 +175,7 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
           collapsed ? "ml-16" : "ml-64"
         )}
       >
-        <div className="p-6">{children}</div>
+        <div className="p-6 page-enter">{children}</div>
       </main>
     </div>
   );

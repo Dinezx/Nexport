@@ -237,6 +237,8 @@ export default function ExporterDashboard() {
             change={`${inTransit.length} in transit`}
             changeType={inTransit.length > 0 ? "positive" : "neutral"}
             icon={Truck}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "0ms" }}
           />
           <StatCard
             title="Total Bookings"
@@ -244,6 +246,8 @@ export default function ExporterDashboard() {
             change={`${completedBookings.length} completed`}
             changeType="positive"
             icon={Package}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "100ms" }}
           />
           <StatCard
             title="In Transit"
@@ -251,6 +255,8 @@ export default function ExporterDashboard() {
             change="Live tracking"
             changeType="neutral"
             icon={Clock}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "200ms" }}
           />
           <StatCard
             title="Total Spent"
@@ -258,6 +264,8 @@ export default function ExporterDashboard() {
             change={`${bookings.filter((b) => b.status === "paid").length} pending shipment`}
             changeType="neutral"
             icon={TrendingUp}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "300ms" }}
           />
         </div>
 

@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { LucideIcon } from "lucide-react";
+import React from "react";
 
 interface StatCardProps {
   title: string;
@@ -9,6 +10,7 @@ interface StatCardProps {
   icon: LucideIcon;
   className?: string;
   variant?: "default" | "dark";
+  style?: React.CSSProperties;
 }
 
 export function StatCard({
@@ -19,11 +21,12 @@ export function StatCard({
   icon: Icon,
   className,
   variant = "dark",
+  style,
 }: StatCardProps) {
   if (variant === "dark") {
     return (
-      <div className={cn(
-        "rounded-xl border border-zinc-800 bg-zinc-900/80 p-6 transition-all duration-300 hover:border-zinc-700 hover:bg-zinc-900",
+      <div style={style} className={cn(
+        "rounded-xl border border-zinc-800 bg-zinc-900/80 p-6 transition-all duration-300 hover:border-zinc-700 hover:bg-zinc-900 hover:-translate-y-1 hover:shadow-lg group",
         className
       )}>
         <div className="flex items-start justify-between">
@@ -43,7 +46,7 @@ export function StatCard({
               </p>
             )}
           </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
             <Icon className="h-6 w-6 text-primary" />
           </div>
         </div>
@@ -53,8 +56,8 @@ export function StatCard({
 
   // Default light variant (original design)
   return (
-    <div className={cn(
-      "rounded-xl border bg-card text-card-foreground shadow-card hover:shadow-card-hover transition-all duration-300 p-6",
+    <div style={style} className={cn(
+      "rounded-xl border bg-card text-card-foreground shadow-card hover:shadow-card-hover transition-all duration-300 p-6 hover:-translate-y-1 group",
       className
     )}>
       <div className="flex items-start justify-between">
@@ -74,7 +77,7 @@ export function StatCard({
             </p>
           )}
         </div>
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
           <Icon className="h-6 w-6 text-primary" />
         </div>
       </div>

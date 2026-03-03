@@ -14,10 +14,10 @@ export default function Settings() {
   return (
     <DashboardLayout userType="exporter">
       <div className="max-w-4xl mx-auto space-y-6">
-        <h1 className="text-3xl font-bold">Settings</h1>
+        <h1 className="text-3xl font-bold animate-fade-in">Settings</h1>
 
         {/* Profile */}
-        <Card>
+        <Card className="animate-fade-in-up opacity-0" style={{ animationDelay: "100ms" }}>
           <CardHeader>
             <CardTitle>Profile Settings</CardTitle>
           </CardHeader>
@@ -37,7 +37,7 @@ export default function Settings() {
         </Card>
 
         {/* Notifications */}
-        <Card>
+        <Card className="animate-fade-in-up opacity-0" style={{ animationDelay: "200ms" }}>
           <CardHeader>
             <CardTitle>Notifications</CardTitle>
           </CardHeader>

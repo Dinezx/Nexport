@@ -249,6 +249,8 @@ export default function ProviderDashboard() {
             change={`${pendingPickups.length} pending pickup`}
             changeType={pendingPickups.length > 0 ? "neutral" : "positive"}
             icon={Truck}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "0ms" }}
           />
           <StatCard
             title="My Containers"
@@ -256,6 +258,8 @@ export default function ProviderDashboard() {
             change={`${containers.filter((c) => c.status === "available").length} available`}
             changeType="positive"
             icon={Package}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "100ms" }}
           />
           <StatCard
             title="Completion Rate"
@@ -263,6 +267,8 @@ export default function ProviderDashboard() {
             change={`${completedBookings.length} delivered`}
             changeType="positive"
             icon={Clock}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "200ms" }}
           />
           <StatCard
             title="Revenue"
@@ -270,6 +276,8 @@ export default function ProviderDashboard() {
             change={`${bookings.length} total bookings`}
             changeType="positive"
             icon={DollarSign}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "300ms" }}
           />
         </div>
 

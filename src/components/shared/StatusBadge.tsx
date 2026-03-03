@@ -21,7 +21,12 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   const config = statusConfig[status];
   
   return (
-    <Badge variant={config.variant} className={cn("capitalize", className)}>
+    <Badge variant={config.variant} className={cn(
+      "capitalize transition-all duration-200",
+      status === "in-transit" && "animate-pulse-glow",
+      className
+    )}>
+      {status === "in-transit" && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current inline-block animate-pulse" />}
       {config.label}
     </Badge>
   );

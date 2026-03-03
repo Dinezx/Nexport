@@ -170,8 +170,8 @@ export default function MockPayment() {
 
   return (
     <DashboardLayout userType="exporter">
-      <div className="max-w-md mx-auto mt-10">
-        <Card>
+      <div className="max-w-md mx-auto mt-10 animate-scale-in-bounce">
+        <Card className="gradient-border">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <IndianRupee className="h-5 w-5" />

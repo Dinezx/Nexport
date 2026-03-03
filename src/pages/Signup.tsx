@@ -82,15 +82,15 @@ export default function Signup() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-secondary/30 px-4 py-12">
-      <div className="w-full max-w-md">
-        <Link to="/" className="flex items-center justify-center gap-2 mb-8">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
+      <div className="w-full max-w-md animate-slide-up-fade">
+        <Link to="/" className="flex items-center justify-center gap-2 mb-8 group">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
             <Package className="h-5 w-5 text-primary-foreground" />
           </div>
           <span className="text-2xl font-bold">NEXPORT</span>
         </Link>
 
-        <Card>
+        <Card className="gradient-border">
           <CardHeader className="text-center">
             <CardTitle>Create Account</CardTitle>
             <CardDescription>Sign up to get started</CardDescription>
@@ -102,8 +102,8 @@ export default function Signup() {
               <button
                 onClick={() => setRole("exporter")}
                 className={cn(
-                  "p-3 border rounded-lg flex gap-2 justify-center",
-                  role === "exporter" && "border-primary bg-primary/5"
+                  "p-3 border rounded-lg flex gap-2 justify-center transition-all duration-200 hover:shadow-md",
+                  role === "exporter" ? "border-primary bg-primary/5 shadow-sm scale-[1.02]" : "hover:border-primary/40"
                 )}
               >
                 <User /> Exporter
@@ -112,8 +112,8 @@ export default function Signup() {
               <button
                 onClick={() => setRole("provider")}
                 className={cn(
-                  "p-3 border rounded-lg flex gap-2 justify-center",
-                  role === "provider" && "border-primary bg-primary/5"
+                  "p-3 border rounded-lg flex gap-2 justify-center transition-all duration-200 hover:shadow-md",
+                  role === "provider" ? "border-primary bg-primary/5 shadow-sm scale-[1.02]" : "hover:border-primary/40"
                 )}
               >
                 <Truck /> Provider
