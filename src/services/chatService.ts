@@ -2,6 +2,8 @@ import { supabase } from "@/lib/supabase";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
 import { getOfflineBookings } from "@/services/bookingService";
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+
 export type SenderRole = "exporter" | "provider" | "ai" | "system";
 
 export type Conversation = {
@@ -70,7 +72,12 @@ function saveOfflineMessage(conversationId: string, msg: Message) {
  * Returns all offline conversations for the given user.
  */
 function ensureOfflineConversations(userId: string): OfflineConversation[] {
-  const bookings = getOfflineBookings(userId);
+  // Get bookings for this user first, then try ALL bookings as fallback
+  let bookings = getOfflineBookings(userId);
+  if (bookings.length === 0) {
+    // User ID might not match — get all offline bookings
+    bookings = getOfflineBookings();
+  }
   const existing = getOfflineConversations();
 
   for (const booking of bookings) {
@@ -89,13 +96,15 @@ function ensureOfflineConversations(userId: string): OfflineConversation[] {
     }
   }
 
-  return existing.filter((c) => c.exporter_id === userId || c.provider_id === userId);
+  return existing.filter(
+    (c) => c.exporter_id === userId || c.provider_id === userId || c.exporter_id.startsWith("offline-")
+  );
 }
 
 /* ------------------------------------------------------------------ */
 
 export async function fetchLatestConversation(userId: string) {
-  const online = await isSupabaseReachable(3000);
+  const online = await isSupabaseReachable(SUPABASE_URL, 3000);
   if (!online) {
     const convos = ensureOfflineConversations(userId);
     return convos.length > 0 ? convos[0] : null;
@@ -122,15 +131,17 @@ export type ConversationWithDetails = Conversation & {
 };
 
 export async function fetchAllConversations(userId: string): Promise<ConversationWithDetails[]> {
-  const online = await isSupabaseReachable(3000);
+  const online = await isSupabaseReachable(SUPABASE_URL, 3000);
 
   if (!online) {
     // Build conversations from offline bookings
     const convos = ensureOfflineConversations(userId);
     const bookings = getOfflineBookings(userId);
+    const allBookings = getOfflineBookings(); // fallback: all bookings
 
     return convos.map((conv) => {
-      const booking = bookings.find((b) => b.id === conv.booking_id);
+      const booking = bookings.find((b) => b.id === conv.booking_id)
+        || allBookings.find((b) => b.id === conv.booking_id);
       const msgs = getOfflineMessages(conv.id);
       const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
 
@@ -202,7 +213,7 @@ export async function fetchConversationMessages(conversationId: string) {
     return getOfflineMessages(conversationId);
   }
 
-  const online = await isSupabaseReachable(3000);
+  const online = await isSupabaseReachable(SUPABASE_URL, 3000);
   if (!online) {
     return getOfflineMessages(conversationId);
   }
@@ -259,7 +270,7 @@ export async function insertMessage(payload: {
     return msg;
   }
 
-  const online = await isSupabaseReachable(3000);
+  const online = await isSupabaseReachable(SUPABASE_URL, 3000);
   if (!online) {
     const msg: Message = {
       id: `msg-${crypto.randomUUID()}`,
@@ -294,6 +305,25 @@ export async function sendAiMessage(params: {
 }): Promise<any> {
   // For offline conversations, generate a local AI response
   if (params.conversationId.startsWith("conv-offline-") || params.bookingId.startsWith("offline-")) {
+    // Check if provider has joined this conversation
+    const existingMsgs = getOfflineMessages(params.conversationId);
+    const providerJoined = existingMsgs.some((m) => m.sender_role === "provider");
+
+    if (providerJoined) {
+      // Provider is in the conversation — simulate provider reply
+      const providerReply = generateOfflineProviderResponse(params.message, params.bookingId);
+      const msg: Message = {
+        id: `msg-${crypto.randomUUID()}`,
+        sender_id: "offline-provider",
+        sender_role: "provider",
+        content: providerReply,
+        created_at: new Date().toISOString(),
+      };
+      saveOfflineMessage(params.conversationId, msg);
+      return { reply: providerReply, offlineMessage: msg };
+    }
+
+    // No provider yet — AI responds
     const aiReply = generateOfflineAiResponse(params.message, params.bookingId);
     const msg: Message = {
       id: `msg-${crypto.randomUUID()}`,
@@ -354,4 +384,43 @@ function generateOfflineAiResponse(message: string, bookingId: string): string {
   }
 
   return `Thank you for your message. Your ${booking?.transport_mode || "sea"} freight booking from ${booking?.origin || "origin"} to ${booking?.destination || "destination"} is being processed. Feel free to ask about ETA, pricing, container details, or tracking status.`;
+}
+
+/* ---------- Offline Provider response generator ---------- */
+
+function generateOfflineProviderResponse(message: string, bookingId: string): string {
+  const lower = message.toLowerCase();
+  const bookings = getOfflineBookings();
+  const booking = bookings.find((b) => b.id === bookingId);
+  const origin = booking?.origin || "origin";
+  const destination = booking?.destination || "destination";
+  const mode = booking?.transport_mode || "sea";
+
+  if (lower.includes("eta") || lower.includes("delivery") || lower.includes("when") || lower.includes("arrive")) {
+    const days = mode === "air" ? "3-5" : mode === "road" ? "5-10" : "15-25";
+    return `Hi! For your ${mode} freight from ${origin} to ${destination}, the expected transit time is ${days} business days. I'll keep you updated if there are any changes to the schedule. The shipment is on track.`;
+  }
+
+  if (lower.includes("customs") || lower.includes("clearance") || lower.includes("documentation") || lower.includes("document")) {
+    return `For customs clearance, please ensure you have the following documents ready:\n\n1. Commercial Invoice\n2. Packing List\n3. Bill of Lading\n4. Certificate of Origin\n5. Insurance Certificate\n\nI'll handle the clearance process from our end. Let me know if you need any specific document templates.`;
+  }
+
+  if (lower.includes("price") || lower.includes("cost") || lower.includes("charge") || lower.includes("fee")) {
+    const price = booking?.price ? `₹${booking.price.toLocaleString("en-IN")}` : "the agreed amount";
+    return `The total cost for your shipment is ${price}. This covers:\n- Container charges\n- Freight charges\n- Terminal handling\n\nAdditional charges for customs brokerage and last-mile delivery will be billed separately if applicable.`;
+  }
+
+  if (lower.includes("delay") || lower.includes("late") || lower.includes("problem") || lower.includes("issue")) {
+    return `I understand your concern. Let me check the current status of your shipment. As of now, there are no reported delays on the ${origin} to ${destination} route. I'll immediately notify you if any issues arise.`;
+  }
+
+  if (lower.includes("thank") || lower.includes("thanks")) {
+    return `You're welcome! Don't hesitate to reach out if you have any more questions about your shipment. I'm here to help throughout the entire shipping process.`;
+  }
+
+  if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey")) {
+    return `Hi there! I'm managing your ${mode} freight shipment from ${origin} to ${destination}. How can I help you today?`;
+  }
+
+  return `Thank you for reaching out. I'm overseeing your shipment from ${origin} to ${destination} via ${mode} freight. Everything is progressing as planned. Is there anything specific you'd like to know about your shipment?`;
 }

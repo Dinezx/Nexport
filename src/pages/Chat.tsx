@@ -200,35 +200,56 @@ export default function Chat() {
       if (senderRole === "exporter") {
         const lower = messageText.toLowerCase();
         const operationalKeywords = ["customs", "clearance", "cutoff", "documentation"];
+        const providerKeywords = ["talk to provider", "connect me", "speak to", "talk to human", "real person", "provider", "connect provider", "want to talk", "need to talk", "contact provider"];
         const isOperationalQuestion = operationalKeywords.some((k) => lower.includes(k));
+        const wantsProvider = providerKeywords.some((k) => lower.includes(k));
 
-        if (isOperationalQuestion) {
+        if (isOperationalQuestion || wantsProvider) {
           try {
-            const flaggedMessages = [
-              {
-                conversationId: conversation.id,
-                senderId: user.id,
-                senderRole: "system" as SenderRole,
-                content: "This question has been flagged for your logistics provider to review.",
-              },
-              {
-                conversationId: conversation.id,
-                senderId: user.id,
-                senderRole: "ai" as SenderRole,
-                content: "This question involves operational details (e.g. customs, clearance, cutoff, documentation). I have forwarded it to your logistics provider for confirmation.",
-              },
-            ];
-
-            for (const msg of flaggedMessages) {
-              const inserted = await insertMessage(msg);
-              if (inserted) {
-                setMessageStatuses((prev) => ({ ...prev, [inserted.id]: "delivered" }));
-                setMessages((prev) => [...prev, inserted]);
-              }
+            // System notification
+            const systemMsg = await insertMessage({
+              conversationId: conversation.id,
+              senderId: user.id,
+              senderRole: "system" as SenderRole,
+              content: wantsProvider
+                ? "Your request has been forwarded to the logistics provider. They will respond shortly."
+                : "This question has been flagged for your logistics provider to review.",
+            });
+            if (systemMsg) {
+              setMessageStatuses((prev) => ({ ...prev, [systemMsg.id]: "delivered" }));
+              setMessages((prev) => [...prev, systemMsg]);
             }
+
+            // AI acknowledgment
+            const aiAckMsg = await insertMessage({
+              conversationId: conversation.id,
+              senderId: "ai",
+              senderRole: "ai" as SenderRole,
+              content: wantsProvider
+                ? "I've notified the logistics provider about your request. They will join this conversation shortly. In the meantime, feel free to ask me any questions about your shipment."
+                : "This question involves operational details (e.g. customs, clearance, cutoff, documentation). I have forwarded it to your logistics provider for confirmation.",
+            });
+            if (aiAckMsg) {
+              setMessageStatuses((prev) => ({ ...prev, [aiAckMsg.id]: "delivered" }));
+              setMessages((prev) => [...prev, aiAckMsg]);
+            }
+
+            // Simulate provider joining after a short delay
+            setTimeout(async () => {
+              const providerMsg = await insertMessage({
+                conversationId: conversation.id,
+                senderId: "offline-provider",
+                senderRole: "provider" as SenderRole,
+                content: `Hello! I'm the logistics provider handling your shipment from ${(conversation as ConversationWithDetails).booking_origin || "origin"} to ${(conversation as ConversationWithDetails).booking_destination || "destination"}. How can I assist you?`,
+              });
+              if (providerMsg) {
+                setMessageStatuses((prev) => ({ ...prev, [providerMsg.id]: "delivered" }));
+                setMessages((prev) => [...prev, providerMsg]);
+              }
+            }, 1500);
           } catch (err) {
-            console.error("Error flagging operational question:", err);
-            toast({ title: "Failed to flag question for provider.", variant: "destructive" });
+            console.error("Error connecting to provider:", err);
+            toast({ title: "Failed to connect to provider.", variant: "destructive" });
           }
         } else {
           setAiThinking(true);

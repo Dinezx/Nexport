@@ -2,6 +2,8 @@ import { supabase } from "@/lib/supabase";
 import { getOfflineBookings } from "@/services/bookingService";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+
 export type TrackingEvent = {
   id: string;
   title: string;
@@ -73,7 +75,7 @@ export async function fetchTrackingCore(bookingId: string) {
   }
 
   // Check if Supabase is reachable
-  const online = await isSupabaseReachable(3000);
+  const online = await isSupabaseReachable(SUPABASE_URL, 3000);
   if (!online) {
     // Try offline storage as fallback
     const result = fetchOfflineTrackingCore(bookingId);

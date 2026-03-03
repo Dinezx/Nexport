@@ -49,7 +49,7 @@ export default function MockPayment() {
 
       // Online booking — try Supabase
       try {
-        const online = await isSupabaseReachable(3000);
+        const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!, 3000);
         if (!online) {
           // Fallback: check offline storage even for non-offline IDs
           const offlineBookings = getOfflineBookings();
