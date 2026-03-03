@@ -274,9 +274,16 @@ export default function ProviderContainers() {
                         <SelectValue placeholder="Select location" />
                       </SelectTrigger>
                       <SelectContent>
-                        {LOCATIONS.filter((location) =>
-                          location.toLowerCase().includes(locationSearch.toLowerCase())
-                        ).map((location) => (
+                        {LOCATIONS.filter((location) => {
+                          const l = location.toLowerCase();
+                          // Filter by transport mode
+                          if (form.transport_mode === "sea" && !l.includes("port")) return false;
+                          if (form.transport_mode === "air" && !l.includes("airport")) return false;
+                          if (form.transport_mode === "road" && !l.includes("icd")) return false;
+                          // Filter by search text
+                          if (locationSearch && !l.includes(locationSearch.toLowerCase())) return false;
+                          return true;
+                        }).map((location) => (
                           <SelectItem key={location} value={location}>
                             {location}
                           </SelectItem>
@@ -286,7 +293,7 @@ export default function ProviderContainers() {
                   </div>
                   <div>
                     <Label>Transport Mode</Label>
-                    <Select value={form.transport_mode} onValueChange={(value) => setForm({ ...form, transport_mode: value })}>
+                    <Select value={form.transport_mode} onValueChange={(value) => setForm({ ...form, transport_mode: value, origin: "" })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select mode" />
                       </SelectTrigger>
