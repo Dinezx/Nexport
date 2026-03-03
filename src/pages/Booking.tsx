@@ -1269,58 +1269,103 @@ export default function Booking() {
     };
 
     try {
-      // Try Supabase query directly (with a 6s timeout)
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
+      // 1) Try with the main supabase client (has user session for RLS)
+      let data: any[] | null = null;
+      let queryError: any = null;
 
-      // Use a fresh client to avoid auth token issues blocking the query
-      const { createClient } = await import("@supabase/supabase-js");
-      const anonClient = createClient(
-        import.meta.env.VITE_SUPABASE_URL!,
-        import.meta.env.VITE_SUPABASE_ANON_KEY!,
-        { auth: { persistSession: false, autoRefreshToken: false } }
-      );
-
-      const { data, error } = await anonClient
-        .from("containers")
-        .select("*")
-        .eq("container_type", form.container_type)
-        .eq("container_size", sizeFormatted)
-        .abortSignal(controller.signal);
-
-      clearTimeout(timer);
-
-      if (error) {
-        console.warn("Container query error:", error);
-        throw error;
+      try {
+        const res = await supabase
+          .from("containers")
+          .select("*")
+          .eq("container_type", form.container_type)
+          .eq("container_size", sizeFormatted);
+        data = res.data;
+        queryError = res.error;
+        console.log("Main client containers:", data?.length, "rows, error:", queryError?.message);
+      } catch (e) {
+        console.warn("Main client query threw:", e);
       }
 
-      console.log("Containers fetched:", data?.length, "rows for", form.container_type, sizeFormatted);
-
-      // Fetch pending bookings to account for reserved (held) space
-      const containerIds = (data || []).map((c: any) => c.id);
-      let pendingReserved: Record<string, number> = {};
-      if (containerIds.length > 0) {
-        const { data: pendingBookings } = await supabase
-          .from("bookings")
-          .select("container_id, allocated_cbm, booking_mode")
-          .in("container_id", containerIds)
-          .eq("status", "pending_payment");
-
-        if (pendingBookings) {
-          for (const pb of pendingBookings) {
-            if (!pb.container_id) continue;
-            if (pb.booking_mode === "full") {
-              pendingReserved[pb.container_id] = Infinity;
-            } else {
-              pendingReserved[pb.container_id] = (pendingReserved[pb.container_id] || 0) + (pb.allocated_cbm || 0);
-            }
-          }
+      // 2) If main client failed or returned nothing, try without filters
+      //    (in case column names differ in the DB)
+      if (queryError || !data || data.length === 0) {
+        try {
+          const res2 = await supabase
+            .from("containers")
+            .select("*");
+          const allData = res2.data || [];
+          console.log("All containers (unfiltered):", allData.length, "rows");
+          // Filter client-side to handle any column name variations
+          data = allData.filter((c: any) =>
+            (c.container_type === form.container_type || c.type === form.container_type) &&
+            (c.container_size === sizeFormatted || c.size === sizeFormatted)
+          );
+          console.log("After client-side filter:", data.length, "rows");
+          queryError = res2.error;
+        } catch (e2) {
+          console.warn("Unfiltered query threw:", e2);
         }
       }
 
+      // 3) If still nothing, try fresh anon client (no auth, no RLS dependency)
+      if (queryError || !data || data.length === 0) {
+        try {
+          const { createClient } = await import("@supabase/supabase-js");
+          const anonClient = createClient(
+            import.meta.env.VITE_SUPABASE_URL!,
+            import.meta.env.VITE_SUPABASE_ANON_KEY!,
+            { auth: { persistSession: false, autoRefreshToken: false } }
+          );
+          const res3 = await anonClient
+            .from("containers")
+            .select("*");
+          const anonData = res3.data || [];
+          console.log("Anon client all containers:", anonData.length, "rows");
+          data = anonData.filter((c: any) =>
+            (c.container_type === form.container_type || c.type === form.container_type) &&
+            (c.container_size === sizeFormatted || c.size === sizeFormatted)
+          );
+          console.log("Anon after filter:", data.length, "rows");
+        } catch (e3) {
+          console.warn("Anon client query threw:", e3);
+        }
+      }
+
+      if (!data || data.length === 0) {
+        console.log("No containers found from DB, falling back to demo");
+        setAvailableContainers(getDemoContainers());
+        setLoadingContainers(false);
+        return;
+      }
+
+      // Fetch pending bookings to account for reserved (held) space
+      const containerIds = data.map((c: any) => c.id);
+      let pendingReserved: Record<string, number> = {};
+      try {
+        if (containerIds.length > 0) {
+          const { data: pendingBookings } = await supabase
+            .from("bookings")
+            .select("container_id, allocated_cbm, booking_mode")
+            .in("container_id", containerIds)
+            .eq("status", "pending_payment");
+
+          if (pendingBookings) {
+            for (const pb of pendingBookings) {
+              if (!pb.container_id) continue;
+              if (pb.booking_mode === "full") {
+                pendingReserved[pb.container_id] = Infinity;
+              } else {
+                pendingReserved[pb.container_id] = (pendingReserved[pb.container_id] || 0) + (pb.allocated_cbm || 0);
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore pending bookings errors — just show containers as-is
+      }
+
       // Calculate effective available space (minus pending holds)
-      let filteredContainers = (data || []).map((c: any) => ({
+      let filteredContainers = data.map((c: any) => ({
         ...c,
         effective_available_cbm: Math.max(0, (c.available_space_cbm || 0) - (pendingReserved[c.id] || 0)),
       }));
