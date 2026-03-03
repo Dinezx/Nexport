@@ -26,7 +26,6 @@ type Container = {
   total_space_cbm: number;
   available_space_cbm: number;
   origin: string;
-  destination: string;
   transport_mode: string;
   status: string;
   created_at: string;
@@ -48,7 +47,6 @@ export default function ProviderContainers() {
     total_space_cbm: "",
     available_space_cbm: "",
     origin: "",
-    destination: "",
     transport_mode: "",
   });
   const [locationSearch, setLocationSearch] = useState("");
@@ -95,7 +93,6 @@ export default function ProviderContainers() {
       total_space_cbm: "",
       available_space_cbm: "",
       origin: "",
-      destination: "",
       transport_mode: "",
     });
     setEditingContainer(null);
@@ -130,7 +127,6 @@ export default function ProviderContainers() {
         total_space_cbm: totalSpace,
         available_space_cbm: availableSpace,
         origin: form.origin,
-        destination: form.destination,
         transport_mode: form.transport_mode,
         status,
       };
@@ -166,7 +162,6 @@ export default function ProviderContainers() {
       total_space_cbm: container.total_space_cbm.toString(),
       available_space_cbm: container.available_space_cbm.toString(),
       origin: container.origin,
-      destination: container.destination,
       transport_mode: container.transport_mode,
     });
     setShowForm(true);
@@ -347,9 +342,6 @@ export default function ProviderContainers() {
               <CardContent className="space-y-2">
                 <div className="text-sm">
                   <b>Origin:</b> {c.origin}
-                </div>
-                <div className="text-sm">
-                  <b>Destination:</b> {c.destination}
                 </div>
                 <div className="text-sm">
                   <b>Transport:</b> {c.transport_mode}
