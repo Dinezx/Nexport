@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
 import { getOfflineBookings } from "@/services/bookingService";
+import { predictEtaAndRisk } from "@/lib/prediction";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 
@@ -364,8 +365,19 @@ function generateOfflineAiResponse(message: string, bookingId: string): string {
 
   if (lower.includes("eta") || lower.includes("delivery") || lower.includes("when")) {
     const mode = booking?.transport_mode || "sea";
+    try {
+      const prediction = predictEtaAndRisk({
+        origin: booking?.origin || "Chennai Port, India",
+        destination: booking?.destination || "Singapore Port, Singapore",
+        transport: mode as "sea" | "road" | "air",
+        bookingMode: (booking?.booking_mode || "full") as "full" | "partial",
+        cbm: booking?.space_cbm ? Number(booking.space_cbm) : 0,
+      });
+      const b = prediction.breakdown;
+      return `Based on real-time shipment data for your ${mode} freight from ${booking?.origin || "origin"} to ${booking?.destination || "destination"}:\n\n📦 **Estimated Delivery: ${prediction.etaDays} days** (range: ${prediction.etaRange.min}–${prediction.etaRange.max} days)\n📊 Confidence: ${prediction.etaConfidence}\n\n**Breakdown:**\n• Transit time: ${b.transitDays} days\n• Origin handling: ${b.originHandling} days\n• Destination handling: ${b.destHandling} days\n• Customs clearance: ${b.customsClearance} days\n${b.weatherImpact > 0 ? `• Weather impact: +${b.weatherImpact}%\n` : ""}• Port congestion: ${b.congestionImpact}\n\n⚠️ Delay risk: ${prediction.delayRisk.toUpperCase()} — ${prediction.delayReason}`;
+    } catch (_) { /* fallback below */ }
     const days = mode === "air" ? "3-5" : mode === "road" ? "5-10" : "15-25";
-    return `Based on your ${mode} freight booking from ${booking?.origin || "origin"} to ${booking?.destination || "destination"}, the estimated delivery time is approximately ${days} days. Please note this is an estimate and may vary based on weather, customs clearance, and port congestion.`;
+    return `Based on your ${mode} freight booking from ${booking?.origin || "origin"} to ${booking?.destination || "destination"}, the estimated delivery time is approximately ${days} days.`;
   }
 
   if (lower.includes("price") || lower.includes("cost") || lower.includes("payment")) {

@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getOfflineBookings } from "@/services/bookingService";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
+import { predictEtaAndRisk } from "@/lib/prediction";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 
@@ -50,6 +51,21 @@ function fetchOfflineTrackingCore(bookingId: string) {
   const isPaid = booking.status === "paid";
   const events = buildOfflineTrackingEvents(bookingId, booking.origin, isPaid);
 
+  // Use real-time prediction engine for ETA
+  let etaDays: number | null = null;
+  let etaConfidence: string | null = null;
+  try {
+    const prediction = predictEtaAndRisk({
+      origin: booking.origin,
+      destination: booking.destination,
+      transport: (booking.transport_mode || "sea") as "sea" | "road" | "air",
+      bookingMode: (booking.booking_mode || "full") as "full" | "partial",
+      cbm: booking.space_cbm ? Number(booking.space_cbm) : 0,
+    });
+    etaDays = prediction.etaDays;
+    etaConfidence = prediction.etaConfidence;
+  } catch (_) { /* ignore */ }
+
   return {
     booking: {
       id: booking.id,
@@ -57,8 +73,8 @@ function fetchOfflineTrackingCore(bookingId: string) {
       destination: booking.destination,
       transport_mode: booking.transport_mode,
       status: booking.status,
-      eta_days: null,
-      eta_confidence: null,
+      eta_days: etaDays,
+      eta_confidence: etaConfidence,
     },
     events,
   };

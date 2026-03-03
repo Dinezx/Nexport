@@ -1,31 +1,92 @@
+import {
+  LOCATION_COORDS,
+  HISTORICAL_ROUTES,
+  CUSTOMS_DAYS,
+  TRANSPORT_SPEEDS,
+  haversineDistanceKm,
+  getSeaRouteMultiplier,
+  getWeatherDelayFactor,
+  getPortHandlingDays,
+  type LocationCoord,
+} from "./shipmentData";
+
 type TransportMode = "sea" | "road" | "air";
 type BookingMode = "full" | "partial";
 
-const SPEED_KM_PER_DAY: Record<TransportMode, number> = {
-  sea: 700,
-  road: 450,
-  air: 2200,
-};
+// ─── Find closest known location for a given name ───────────────────────────
 
-const CONFIDENCE_BY_MODE: Record<TransportMode, "high" | "medium"> = {
-  sea: "high",
-  road: "medium",
-  air: "high",
-};
+function findLocation(name: string): LocationCoord | null {
+  if (LOCATION_COORDS[name]) return LOCATION_COORDS[name];
 
-const hashString = (value: string): number => {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  // Fuzzy match: try substring matching
+  const lower = name.toLowerCase();
+  for (const [key, coord] of Object.entries(LOCATION_COORDS)) {
+    if (key.toLowerCase().includes(lower) || lower.includes(key.toLowerCase().split(",")[0].split(" ")[0])) {
+      return coord;
+    }
   }
-  return hash;
-};
 
-const estimateDistanceKm = (origin: string, destination: string): number => {
-  const seed = hashString(`${origin}-${destination}`);
-  const base = 300 + (seed % 7000);
-  return Math.max(300, base);
-};
+  // Try matching city name
+  const city = lower.split(",")[0].trim().split(" ")[0];
+  for (const [key, coord] of Object.entries(LOCATION_COORDS)) {
+    if (key.toLowerCase().includes(city)) return coord;
+  }
+
+  return null;
+}
+
+function getCountry(name: string): string {
+  const loc = findLocation(name);
+  return loc?.country || "India";
+}
+
+// ─── Get real distance between two locations ────────────────────────────────
+
+function getRealDistanceKm(origin: string, destination: string, transport: TransportMode): number {
+  const o = findLocation(origin);
+  const d = findLocation(destination);
+
+  if (o && d) {
+    const gcDist = haversineDistanceKm(o.lat, o.lng, d.lat, d.lng);
+    if (transport === "sea") return gcDist * getSeaRouteMultiplier(origin, destination);
+    if (transport === "road") return gcDist * 1.3; // Road routes are ~1.3x straight-line
+    return gcDist; // Air is close to great-circle
+  }
+
+  // Fallback: estimate from name hash (legacy)
+  let hash = 0;
+  const key = `${origin}-${destination}`;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return Math.max(300, 300 + (hash % 7000));
+}
+
+// ─── Check for historical route data ────────────────────────────────────────
+
+function findHistoricalRoute(origin: string, destination: string, transport: TransportMode) {
+  // Exact match
+  const exact = HISTORICAL_ROUTES.find(
+    (r) => r.origin === origin && r.destination === destination && r.transport === transport
+  );
+  if (exact) return exact;
+
+  // Reverse route (typically similar transit time)
+  const reverse = HISTORICAL_ROUTES.find(
+    (r) => r.origin === destination && r.destination === origin && r.transport === transport
+  );
+  if (reverse) return reverse;
+
+  // Fuzzy match by city names
+  const oCity = origin.toLowerCase().split(",")[0].split(" ")[0];
+  const dCity = destination.toLowerCase().split(",")[0].split(" ")[0];
+  return HISTORICAL_ROUTES.find(
+    (r) =>
+      r.transport === transport &&
+      r.origin.toLowerCase().includes(oCity) &&
+      r.destination.toLowerCase().includes(dCity)
+  ) || null;
+}
+
+// ─── Main ETA prediction with real-world data ───────────────────────────────
 
 export const predictEtaAndRisk = (params: {
   origin: string;
@@ -35,43 +96,146 @@ export const predictEtaAndRisk = (params: {
   cbm: number;
 }): {
   etaDays: number;
-  etaConfidence: "high" | "medium";
+  etaRange: { min: number; max: number };
+  etaConfidence: "high" | "medium" | "low";
   delayRisk: "low" | "medium" | "high";
   delayReason: string;
+  breakdown: {
+    transitDays: number;
+    originHandling: number;
+    destHandling: number;
+    customsClearance: number;
+    weatherImpact: number;
+    congestionImpact: string;
+  };
 } => {
-  const distanceKm = estimateDistanceKm(params.origin, params.destination);
-  const speed = SPEED_KM_PER_DAY[params.transport] || 600;
-  const rawDays = distanceKm / speed;
-  const etaDays = Math.max(1, Math.round(rawDays));
+  const currentMonth = new Date().getMonth();
+  const distanceKm = getRealDistanceKm(params.origin, params.destination, params.transport);
 
+  // ── Try historical data first ──
+  const historical = findHistoricalRoute(params.origin, params.destination, params.transport);
+
+  // ── Location metadata ──
+  const originLoc = findLocation(params.origin);
+  const destLoc = findLocation(params.destination);
+  const originCongestion = originLoc?.congestionIndex ?? 5;
+  const destCongestion = destLoc?.congestionIndex ?? 5;
+  const originType = originLoc?.type ?? "port";
+  const destType = destLoc?.type ?? "port";
+  const originCountry = originLoc?.country ?? getCountry(params.origin);
+  const destCountry = destLoc?.country ?? getCountry(params.destination);
+
+  // ── Port/terminal handling ──
+  const originHandling = getPortHandlingDays(originCongestion, originType);
+  const destHandling = getPortHandlingDays(destCongestion, destType);
+
+  // ── Customs clearance ──
+  const customsExport = CUSTOMS_DAYS[originCountry]?.export ?? 2.5;
+  const customsImport = CUSTOMS_DAYS[destCountry]?.import ?? 3.5;
+  const totalCustoms = customsExport + customsImport;
+
+  // ── Weather factor ──
+  const weatherFactor = getWeatherDelayFactor(currentMonth, params.transport);
+
+  // ── Transit time calculation ──
+  let transitDays: number;
+  let etaDays: number;
+  let confidence: "high" | "medium" | "low";
+
+  if (historical) {
+    // Use historical data with weather adjustment
+    transitDays = historical.avgDays * weatherFactor;
+    // Historical data already includes most delays, so add only weather delta
+    etaDays = Math.round(transitDays);
+    confidence = historical.sampleSize > 500 ? "high" : "medium";
+  } else {
+    // Calculate from physics + data
+    const speed = TRANSPORT_SPEEDS[params.transport];
+    const effectiveSpeed = speed.avgKmPerDay;
+    transitDays = (distanceKm / effectiveSpeed) * weatherFactor;
+    etaDays = Math.round(transitDays + originHandling + destHandling + totalCustoms);
+    confidence = originLoc && destLoc ? "medium" : "low";
+  }
+
+  // ── LCL/partial consolidation extra ──
+  if (params.bookingMode === "partial") {
+    const lclExtra = params.cbm > 15 ? 2 : 1;
+    etaDays += lclExtra;
+  }
+
+  etaDays = Math.max(1, etaDays);
+
+  // ── ETA range ──
+  let minDays: number, maxDays: number;
+  if (historical) {
+    minDays = historical.minDays;
+    maxDays = Math.round(historical.maxDays * weatherFactor);
+  } else {
+    minDays = Math.max(1, Math.round(etaDays * 0.75));
+    maxDays = Math.round(etaDays * 1.35);
+  }
+
+  // ── Delay risk assessment ──
   let delayRisk: "low" | "medium" | "high" = "low";
-  let delayReason = "Standard transit conditions.";
+  let delayReason = "Standard transit conditions expected.";
+  const riskFactors: string[] = [];
 
-  if (params.transport === "sea" && distanceKm > 4000) {
-    delayRisk = "medium";
-    delayReason = "Long ocean route with transshipment risk.";
+  // Congestion risk
+  if (originCongestion >= 8 || destCongestion >= 8) {
+    riskFactors.push(`High port congestion (${originCongestion >= 8 ? params.origin : params.destination}: ${Math.max(originCongestion, destCongestion)}/10)`);
   }
-  if (params.transport === "road" && distanceKm > 1500) {
-    delayRisk = "medium";
-    delayReason = "Long-haul road route with border/traffic exposure.";
+
+  // Weather risk
+  if (weatherFactor > 1.15) {
+    riskFactors.push(`Seasonal weather impact (+${Math.round((weatherFactor - 1) * 100)}% transit time)`);
   }
+
+  // Long-haul risk
+  if (params.transport === "sea" && distanceKm > 6000) {
+    riskFactors.push("Long ocean route with potential transshipment");
+  }
+  if (params.transport === "road" && distanceKm > 2000) {
+    riskFactors.push("Extended overland route with border crossing risk");
+  }
+
+  // Customs risk
+  if (totalCustoms > 7) {
+    riskFactors.push(`Extended customs clearance expected (~${Math.round(totalCustoms)} days)`);
+  }
+
+  // LCL risk
   if (params.bookingMode === "partial" && params.cbm > 15) {
-    delayRisk = "medium";
-    delayReason = "High utilization LCL booking can add consolidation time.";
+    riskFactors.push("High-utilization LCL cargo may require consolidation wait");
   }
-  if (params.transport === "air" && distanceKm > 8000) {
-    delayRisk = "medium";
-    delayReason = "Ultra-long haul air route with possible capacity constraints.";
-  }
-  if (params.transport === "sea" && params.bookingMode === "partial" && distanceKm > 5000) {
+
+  if (riskFactors.length >= 3) {
     delayRisk = "high";
-    delayReason = "Long LCL ocean route with multi-port handling risk.";
+    delayReason = riskFactors.slice(0, 3).join(". ") + ".";
+  } else if (riskFactors.length >= 1) {
+    delayRisk = "medium";
+    delayReason = riskFactors.join(". ") + ".";
   }
+
+  const congestionLabel =
+    Math.max(originCongestion, destCongestion) >= 7
+      ? "High"
+      : Math.max(originCongestion, destCongestion) >= 4
+        ? "Moderate"
+        : "Low";
 
   return {
     etaDays,
-    etaConfidence: CONFIDENCE_BY_MODE[params.transport] || "medium",
+    etaRange: { min: minDays, max: maxDays },
+    etaConfidence: confidence,
     delayRisk,
     delayReason,
+    breakdown: {
+      transitDays: Math.round(transitDays * 10) / 10,
+      originHandling: Math.round(originHandling * 10) / 10,
+      destHandling: Math.round(destHandling * 10) / 10,
+      customsClearance: Math.round(totalCustoms * 10) / 10,
+      weatherImpact: weatherFactor > 1 ? Math.round((weatherFactor - 1) * 100) : 0,
+      congestionImpact: congestionLabel,
+    },
   };
 };

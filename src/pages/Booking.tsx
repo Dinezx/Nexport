@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getOfflineSession, isSupabaseReachable } from "@/lib/offlineAuth";
 import { saveOfflineBooking } from "@/services/bookingService";
+import { predictEtaAndRisk } from "@/lib/prediction";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   Card,
@@ -1183,6 +1184,17 @@ export default function Booking() {
   const [loading, setLoading] = useState(false);
   const [etaDays, setEtaDays] = useState<number | null>(null);
   const [etaConfidence, setEtaConfidence] = useState<string | null>(null);
+  const [etaRange, setEtaRange] = useState<{ min: number; max: number } | null>(null);
+  const [delayRisk, setDelayRisk] = useState<string | null>(null);
+  const [delayReason, setDelayReason] = useState<string | null>(null);
+  const [etaBreakdown, setEtaBreakdown] = useState<{
+    transitDays: number;
+    originHandling: number;
+    destHandling: number;
+    customsClearance: number;
+    weatherImpact: number;
+    congestionImpact: string;
+  } | null>(null);
 
   const [form, setForm] = useState<{
     booking_date: string;
@@ -1407,59 +1419,38 @@ export default function Booking() {
     { number: 4, label: "Summary" },
   ];
 
-  /* ---------------- FETCH ETA ---------------- */
+  /* ---------------- PREDICT ETA (Real-time dataset) ---------------- */
 
   useEffect(() => {
     if (step !== 4) return;
+    if (!form.origin || !form.destination || !form.transport) return;
     setLoading(true);
 
-    // Use demo ETA values as quick fallback with optional AI enhancement
-    const demoEta: Record<string, { days: number; confidence: string }> = {
-      sea: { days: 18, confidence: "high" },
-      road: { days: 7, confidence: "medium" },
-      air: { days: 3, confidence: "high" },
-    };
-    const fallback = demoEta[form.transport as keyof typeof demoEta] || { days: 10, confidence: "medium" };
+    // Use local real-world prediction engine (instant, no network required)
+    try {
+      const result = predictEtaAndRisk({
+        origin: form.origin,
+        destination: form.destination,
+        transport: form.transport as "sea" | "road" | "air",
+        bookingMode: form.booking_mode,
+        cbm: Number(form.space_cbm) || 0,
+      });
 
-    // Try AI ETA with a 5s timeout to avoid hanging
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-
-    fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-eta`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          origin: form.origin,
-          destination: form.destination,
-          transport: form.transport,
-          booking_mode: form.booking_mode,
-          cbm: form.space_cbm,
-        }),
-        signal: controller.signal,
-      }
-    )
-      .then((r) => r.json().catch(() => null))
-      .then((eta) => {
-        clearTimeout(timer);
-        if (eta && (eta.eta_days || eta.confidence)) {
-          setEtaDays(eta.eta_days ?? null);
-          setEtaConfidence(eta.confidence ?? null);
-        } else {
-          setEtaDays(fallback.days);
-          setEtaConfidence(fallback.confidence);
-        }
-      })
-      .catch(() => {
-        clearTimeout(timer);
-        setEtaDays(fallback.days);
-        setEtaConfidence(fallback.confidence);
-      })
-      .finally(() => setLoading(false));
+      setEtaDays(result.etaDays);
+      setEtaConfidence(result.etaConfidence);
+      setEtaRange(result.etaRange);
+      setDelayRisk(result.delayRisk);
+      setDelayReason(result.delayReason);
+      setEtaBreakdown(result.breakdown);
+    } catch (e) {
+      console.error("Local ETA prediction failed", e);
+      // Fallback to simple estimates
+      const fallbackDays: Record<string, number> = { sea: 18, road: 7, air: 3 };
+      setEtaDays(fallbackDays[form.transport] ?? 10);
+      setEtaConfidence("low");
+    } finally {
+      setLoading(false);
+    }
   }, [step, form.origin, form.destination, form.transport, form.booking_mode, form.space_cbm]);
 
   /* ---------------- VALIDATION ---------------- */
@@ -2002,17 +1993,77 @@ export default function Booking() {
               <>
                 <p><b>Date:</b> {form.booking_date}</p>
                 <p><b>Route:</b> {form.origin} → {form.destination}</p>
-                <p>
-                  <b>Estimated Delivery:</b> {etaDays ?? "Calculating..."} days
-                  {etaConfidence && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      ({etaConfidence})
-                    </span>
-                  )}
-                </p>
                 <p><b>Transport:</b> {form.transport}</p>
                 <p><b>Cargo:</b> {form.cargo_type}</p>
                 <p><b>Mode:</b> {form.booking_mode}</p>
+
+                {/* ─── ETA Prediction Card ─── */}
+                <div className="mt-4 p-4 rounded-lg border bg-card">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                    <h4 className="font-semibold text-sm">Real-Time ETA Prediction</h4>
+                    {etaConfidence && (
+                      <span className={cn(
+                        "ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium",
+                        etaConfidence === "high" ? "bg-green-500/20 text-green-400" :
+                        etaConfidence === "medium" ? "bg-yellow-500/20 text-yellow-400" :
+                        "bg-red-500/20 text-red-400"
+                      )}>
+                        {etaConfidence} confidence
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-bold text-primary">{etaDays ?? "..."}</span>
+                    <span className="text-sm text-muted-foreground">days</span>
+                    {etaRange && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        (range: {etaRange.min}–{etaRange.max} days)
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Delay Risk */}
+                  {delayRisk && (
+                    <div className={cn(
+                      "mt-3 p-2 rounded text-xs",
+                      delayRisk === "low" ? "bg-green-500/10 text-green-400" :
+                      delayRisk === "medium" ? "bg-yellow-500/10 text-yellow-400" :
+                      "bg-red-500/10 text-red-400"
+                    )}>
+                      <span className="font-semibold">Delay Risk: {delayRisk.toUpperCase()}</span>
+                      {delayReason && <p className="mt-1 opacity-80">{delayReason}</p>}
+                    </div>
+                  )}
+
+                  {/* Breakdown */}
+                  {etaBreakdown && (
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>Transit Time:</span>
+                      <span className="text-right font-medium text-foreground">{etaBreakdown.transitDays} days</span>
+                      <span>Origin Handling:</span>
+                      <span className="text-right font-medium text-foreground">{etaBreakdown.originHandling} days</span>
+                      <span>Dest Handling:</span>
+                      <span className="text-right font-medium text-foreground">{etaBreakdown.destHandling} days</span>
+                      <span>Customs Clearance:</span>
+                      <span className="text-right font-medium text-foreground">{etaBreakdown.customsClearance} days</span>
+                      {etaBreakdown.weatherImpact > 0 && (
+                        <>
+                          <span>Weather Impact:</span>
+                          <span className="text-right font-medium text-yellow-400">+{etaBreakdown.weatherImpact}%</span>
+                        </>
+                      )}
+                      <span>Port Congestion:</span>
+                      <span className={cn(
+                        "text-right font-medium",
+                        etaBreakdown.congestionImpact === "High" ? "text-red-400" :
+                        etaBreakdown.congestionImpact === "Moderate" ? "text-yellow-400" :
+                        "text-green-400"
+                      )}>{etaBreakdown.congestionImpact}</span>
+                    </div>
+                  )}
+                </div>
                 {(() => {
                   const selectedContainer = availableContainers.find(c => c.id === form.selected_container_id);
                   switch (form.booking_mode) {
