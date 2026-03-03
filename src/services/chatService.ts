@@ -390,6 +390,10 @@ function generateOfflineAiResponse(message: string, bookingId: string): string {
 
 /* ---------- Offline Provider response generator ---------- */
 
+function pickRandom(arr: string[]): string {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 function generateOfflineProviderResponse(message: string, bookingId: string): string {
   const lower = message.toLowerCase();
   const bookings = getOfflineBookings();
@@ -400,29 +404,74 @@ function generateOfflineProviderResponse(message: string, bookingId: string): st
 
   if (lower.includes("eta") || lower.includes("delivery") || lower.includes("when") || lower.includes("arrive")) {
     const days = mode === "air" ? "3-5" : mode === "road" ? "5-10" : "15-25";
-    return `Hi! For your ${mode} freight from ${origin} to ${destination}, the expected transit time is ${days} business days. I'll keep you updated if there are any changes to the schedule. The shipment is on track.`;
+    return pickRandom([
+      `For your ${mode} freight from ${origin} to ${destination}, the expected transit time is ${days} business days. The shipment is on track and I'll update you if anything changes.`,
+      `The estimated arrival is within ${days} business days. Currently everything is moving smoothly on the ${origin} → ${destination} route.`,
+      `Your cargo should reach ${destination} in approximately ${days} business days. No delays reported so far — I'll keep you posted!`,
+      `Transit time for this ${mode} shipment is typically ${days} days. Your shipment from ${origin} is progressing well.`,
+    ]);
   }
 
   if (lower.includes("customs") || lower.includes("clearance") || lower.includes("documentation") || lower.includes("document")) {
-    return `For customs clearance, please ensure you have the following documents ready:\n\n1. Commercial Invoice\n2. Packing List\n3. Bill of Lading\n4. Certificate of Origin\n5. Insurance Certificate\n\nI'll handle the clearance process from our end. Let me know if you need any specific document templates.`;
+    return pickRandom([
+      `For customs clearance, please ensure you have the following documents ready:\n\n1. Commercial Invoice\n2. Packing List\n3. Bill of Lading\n4. Certificate of Origin\n5. Insurance Certificate\n\nI'll handle the clearance process from our end. Let me know if you need any specific document templates.`,
+      `I'll take care of the customs clearance process. Just make sure your Commercial Invoice, Packing List, and Bill of Lading are up to date. I'll reach out if I need anything else from your side.`,
+      `The customs documentation is being processed. Please have your export/import licenses ready. I'll coordinate the clearance and keep you informed of the progress.`,
+    ]);
   }
 
   if (lower.includes("price") || lower.includes("cost") || lower.includes("charge") || lower.includes("fee")) {
     const price = booking?.price ? `₹${booking.price.toLocaleString("en-IN")}` : "the agreed amount";
-    return `The total cost for your shipment is ${price}. This covers:\n- Container charges\n- Freight charges\n- Terminal handling\n\nAdditional charges for customs brokerage and last-mile delivery will be billed separately if applicable.`;
+    return pickRandom([
+      `The total cost for your shipment is ${price}. This covers container charges, freight charges, and terminal handling. Additional charges for customs brokerage may apply separately.`,
+      `Your shipment is billed at ${price} which includes freight, container, and handling fees. Let me know if you need a detailed cost breakdown.`,
+      `The agreed rate is ${price}. This is all-inclusive for the ${mode} freight. Any extra charges like demurrage or customs fees will be communicated beforehand.`,
+    ]);
   }
 
   if (lower.includes("delay") || lower.includes("late") || lower.includes("problem") || lower.includes("issue")) {
-    return `I understand your concern. Let me check the current status of your shipment. As of now, there are no reported delays on the ${origin} to ${destination} route. I'll immediately notify you if any issues arise.`;
+    return pickRandom([
+      `I understand your concern. As of now, there are no reported delays on the ${origin} to ${destination} route. I'll notify you immediately if any issues arise.`,
+      `Let me check on that for you. Everything looks good on our end — no disruptions reported. I'm monitoring the route closely.`,
+      `No worries, I'm keeping a close eye on your shipment. Currently there are no delays. If anything comes up, you'll be the first to know.`,
+      `I've checked with the operations team — your shipment is moving on schedule. No issues reported at this time.`,
+    ]);
   }
 
   if (lower.includes("thank") || lower.includes("thanks")) {
-    return `You're welcome! Don't hesitate to reach out if you have any more questions about your shipment. I'm here to help throughout the entire shipping process.`;
+    return pickRandom([
+      `You're welcome! Don't hesitate to reach out if you have any more questions.`,
+      `Happy to help! Let me know if there's anything else you need.`,
+      `Anytime! I'm here if you need anything regarding your shipment.`,
+      `Glad I could help! Feel free to message me anytime.`,
+    ]);
   }
 
-  if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey")) {
-    return `Hi there! I'm managing your ${mode} freight shipment from ${origin} to ${destination}. How can I help you today?`;
+  if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey") || lower.includes("hii")) {
+    return pickRandom([
+      `Hello! How can I assist you with your shipment today?`,
+      `Hey there! What can I help you with regarding your ${mode} freight?`,
+      `Hi! Everything is on track with your shipment from ${origin}. What would you like to know?`,
+      `Hello! I'm here to help. Feel free to ask about your shipment status, ETA, documentation, or anything else.`,
+      `Hey! Your ${origin} → ${destination} shipment is progressing well. What's on your mind?`,
+    ]);
   }
 
-  return `Thank you for reaching out. I'm overseeing your shipment from ${origin} to ${destination} via ${mode} freight. Everything is progressing as planned. Is there anything specific you'd like to know about your shipment?`;
+  if (lower.includes("update") || lower.includes("status") || lower.includes("track") || lower.includes("where")) {
+    return pickRandom([
+      `Your shipment from ${origin} to ${destination} is currently in transit. Status: ${booking?.status?.replace("_", " ") || "in progress"}. I'll share updates as it moves through each checkpoint.`,
+      `Here's the latest: your ${mode} freight is on schedule. Current status is "${booking?.status?.replace("_", " ") || "processing"}". I'll push you updates at each milestone.`,
+      `The shipment is moving as planned. You can also track it on the Tracking page for real-time updates. Let me know if you need more details!`,
+    ]);
+  }
+
+  // General / unmatched messages — varied responses
+  return pickRandom([
+    `Got it, noted. Let me know if there's anything specific you need help with regarding your shipment.`,
+    `Sure, I'll look into that. Is there anything else I can help you with?`,
+    `Understood. Your shipment from ${origin} to ${destination} is on track. Feel free to ask anything!`,
+    `Thanks for the message! Everything is going smoothly with your ${mode} freight. Let me know if you have any questions.`,
+    `Noted! I'm monitoring your shipment closely. Don't hesitate to ask if you need any details.`,
+    `I'm on it. Your ${origin} → ${destination} shipment is progressing as expected. Is there anything specific you'd like to know?`,
+  ]);
 }
