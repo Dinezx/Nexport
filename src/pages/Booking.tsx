@@ -1252,30 +1252,31 @@ export default function Booking() {
     // Helper: generate demo containers as offline fallback
     const getDemoContainers = () => {
       const totalCbm = form.container_size === "20" ? 33 : 67;
+      const origin = form.origin || "Chennai Port, India";
       return [
         {
           id: `demo-${form.container_type}-${form.container_size}-1`,
-          container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}01`,
+          container_number: `NEXU${Math.floor(1000000 + Math.random() * 9000000)}`,
           container_type: form.container_type,
           container_size: sizeFormatted,
           total_space_cbm: totalCbm,
           available_space_cbm: totalCbm,
           effective_available_cbm: totalCbm,
-          origin: form.origin || "Chennai Port, India",
+          origin: origin,
           transport_mode: form.transport,
-          status: "active",
+          status: "available",
         },
         {
           id: `demo-${form.container_type}-${form.container_size}-2`,
-          container_number: `DEMO-${form.container_type.toUpperCase().slice(0, 3)}-${form.container_size}02`,
+          container_number: `NEXU${Math.floor(1000000 + Math.random() * 9000000)}`,
           container_type: form.container_type,
           container_size: sizeFormatted,
           total_space_cbm: totalCbm,
           available_space_cbm: Math.round(totalCbm * 0.6),
           effective_available_cbm: Math.round(totalCbm * 0.6),
-          origin: form.origin || "Mumbai Port, India",
+          origin: origin,
           transport_mode: form.transport,
-          status: "active",
+          status: "available",
         },
       ];
     };
@@ -1381,6 +1382,20 @@ export default function Booking() {
         ...c,
         effective_available_cbm: Math.max(0, (c.available_space_cbm || 0) - (pendingReserved[c.id] || 0)),
       }));
+
+      // Filter by origin location — only show containers at/near the selected origin
+      const selectedOrigin = (form.origin || "").toLowerCase();
+      if (selectedOrigin) {
+        const originCity = selectedOrigin.split(",")[0].trim().split(" ")[0]; // e.g. "cochin"
+        const originMatched = filteredContainers.filter((c: any) => {
+          const loc = (c.origin || c.current_location || "").toLowerCase();
+          return loc.includes(originCity) || selectedOrigin.includes(loc.split(",")[0].trim().split(" ")[0]);
+        });
+        // If we have containers at origin, use only those; otherwise show all (better than nothing)
+        if (originMatched.length > 0) {
+          filteredContainers = originMatched;
+        }
+      }
 
       if (form.booking_mode === "partial") {
         filteredContainers = filteredContainers.filter((c: any) =>
