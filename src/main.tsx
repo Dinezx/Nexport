@@ -6,7 +6,7 @@ import "./index.css";
 import { AuthProvider } from "./context/AuthContext.tsx";
 
 createRoot(document.getElementById("root")!).render(
-  <BrowserRouter>
+  <BrowserRouter basename="/Nexport">
   <AuthProvider>
     <App />
   </AuthProvider>
