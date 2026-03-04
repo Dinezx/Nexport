@@ -1,4 +1,9 @@
 import { supabase } from "@/lib/supabase";
+import { updateShipmentStatus } from "@/services/shipmentService";
+import { addTrackingEvent } from "@/services/trackingService";
+import { createNotification } from "@/services/notificationService";
+import { uploadInvoice } from "@/services/invoiceService";
+import { optimizeContainerFill } from "@/services/containerAllocator";
 
 /* ---------- Razorpay type declarations ---------- */
 declare global {
@@ -102,10 +107,20 @@ export async function recordPayment(params: {
 export async function markBookingPaid(bookingId: string) {
   const { error } = await supabase
     .from("bookings")
-    .update({ status: "paid" })
+    .update({
+      status: "payment_completed",
+      payment_status: "completed",
+      payout_status: "pending",
+    })
     .eq("id", bookingId);
 
   if (error) throw error;
+
+  try {
+    await updateShipmentStatus(bookingId, "payment_completed");
+  } catch (err) {
+    console.error("Shipment status update failed", err);
+  }
 }
 
 export async function createTrackingEvents(bookingId: string) {
@@ -127,6 +142,83 @@ export async function createTrackingEvents(bookingId: string) {
   ]);
 
   if (error) throw error;
+}
+
+/* ---------- Capacity + escrow helpers ---------- */
+
+async function updateContainerCapacity(bookingId: string) {
+  const { data: booking, error: bookingError } = await supabase
+    .from("bookings")
+    .select("id, container_id, allocated_cbm, booking_mode, exporter_id, container_number")
+    .eq("id", bookingId)
+    .single();
+
+  if (bookingError || !booking) throw bookingError || new Error("Booking not found");
+  if (!booking.container_id) return null;
+
+  const { data: container } = await supabase
+    .from("containers")
+    .select("id, available_space_cbm, total_space_cbm, provider_id, status")
+    .eq("id", booking.container_id)
+    .maybeSingle();
+
+  if (!container) return null;
+
+  const allocated = booking.booking_mode === "partial"
+    ? Math.max(0, booking.allocated_cbm || 0)
+    : (container.total_space_cbm || 0);
+
+  const newAvailable = Math.max(0, (container.available_space_cbm ?? container.total_space_cbm ?? 0) - allocated);
+  const newStatus = newAvailable <= 0 ? "full" : (container.status as any) ?? "available";
+
+  const { error: updateError } = await supabase
+    .from("containers")
+    .update({ available_space_cbm: newAvailable, status: newStatus })
+    .eq("id", container.id);
+
+  if (updateError) throw updateError;
+
+  try {
+    await optimizeContainerFill(container.id);
+  } catch (err) {
+    console.warn("Container optimization skipped", err);
+  }
+
+  try {
+    await createNotification({
+      user_id: container.provider_id,
+      message: `Container ${booking.container_number ?? ""} capacity updated after payment`,
+      type: "container_allocated",
+    });
+  } catch (err) {
+    console.error("Capacity notification failed", err);
+  }
+
+  return { available_space_cbm: newAvailable, status: newStatus };
+}
+
+async function generateInvoice(bookingId: string) {
+  try {
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select("id, origin, destination, price, allocated_cbm, container_number")
+      .eq("id", bookingId)
+      .maybeSingle();
+    if (!booking) return null;
+
+    const route = `${booking.origin} → ${booking.destination}`;
+    const cbm = booking.allocated_cbm ?? 0;
+    return uploadInvoice({
+      bookingId: booking.id,
+      containerNumber: booking.container_number,
+      route,
+      cbm,
+      price: booking.price ?? 0,
+    });
+  } catch (err) {
+    console.error("Invoice generation failed", err);
+    return null;
+  }
 }
 
 export async function ensureConversation(bookingId: string) {

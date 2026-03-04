@@ -17,7 +17,13 @@ import {
   markBookingPaid,
   createTrackingEvents,
   ensureConversation,
+  // internal helpers
 } from "@/services/paymentService";
+import { updateShipmentStatus } from "@/services/shipmentService";
+import { addTrackingEvent } from "@/services/trackingService";
+import { createNotification } from "@/services/notificationService";
+import { uploadInvoice } from "@/services/invoiceService";
+import { optimizeContainerFill } from "@/services/containerAllocator";
 import { getOfflineBookings, updateOfflineBooking } from "@/services/bookingService";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
 
@@ -136,10 +142,108 @@ export default function MockPayment() {
           });
           await markBookingPaid(bookingId);
           await createTrackingEvents(bookingId);
+          // Shipment + tracking lifecycle
+          try {
+            await updateShipmentStatus(bookingId, "payment_completed");
+            await addTrackingEvent({ booking_id: bookingId, status: "payment_completed", location: "System" });
+          } catch (err) {
+            console.error("Shipment status add failed", err);
+          }
+          // Capacity + payout setup + invoice
+          try {
+            // reuse capacity update inside payment service (best-effort)
+            const { data: booking } = await supabase
+              .from("bookings")
+              .select("container_id, allocated_cbm, booking_mode, exporter_id, container_number, origin, destination, price")
+              .eq("id", bookingId)
+              .maybeSingle();
+
+            if (booking?.container_id) {
+              const { data: container } = await supabase
+                .from("containers")
+                .select("id, available_space_cbm, total_space_cbm, provider_id")
+                .eq("id", booking.container_id)
+                .maybeSingle();
+
+              if (container) {
+                const allocated = booking.booking_mode === "partial"
+                  ? Math.max(0, booking.allocated_cbm || 0)
+                  : (container.total_space_cbm || 0);
+                const newAvail = Math.max(0, (container.available_space_cbm ?? container.total_space_cbm ?? 0) - allocated);
+
+                await supabase
+                  .from("containers")
+                  .update({ available_space_cbm: newAvail, status: newAvail <= 0 ? "full" : container.status })
+                  .eq("id", container.id);
+
+                try { await optimizeContainerFill(container.id); } catch (err) { console.warn("Optimize skipped", err); }
+
+                // Notify provider/exporter
+                try {
+                  await createNotification({
+                    user_id: container.provider_id,
+                    message: `Container ${booking.container_number ?? ""} capacity updated`,
+                    type: "container_allocated",
+                  });
+                } catch (err) {
+                  console.error("Notification failed", err);
+                }
+              }
+            }
+
+            // Invoice
+            try {
+              await uploadInvoice({
+                bookingId,
+                containerNumber: booking?.container_number,
+                route: `${booking?.origin ?? ""} → ${booking?.destination ?? ""}`,
+                cbm: booking?.allocated_cbm ?? 0,
+                price: booking?.price ?? amount,
+              });
+            } catch (err) {
+              console.error("Invoice upload failed", err);
+            }
+          } catch (err) {
+            console.error("Post-payment ops failed", err);
+          }
           try {
             await ensureConversation(bookingId);
           } catch (convErr) {
             console.error("Failed to create conversation:", convErr);
+          }
+
+          // Notifications
+          try {
+            const { data: notifyBooking } = await supabase
+              .from("bookings")
+              .select("exporter_id, container_id")
+              .eq("id", bookingId)
+              .maybeSingle();
+            let providerId: string | null = null;
+            if (notifyBooking?.container_id) {
+              const { data: providerRow } = await supabase
+                .from("containers")
+                .select("provider_id")
+                .eq("id", notifyBooking.container_id)
+                .maybeSingle();
+              providerId = providerRow?.provider_id ?? null;
+            }
+            if (notifyBooking?.exporter_id) {
+              await createNotification({
+                user_id: notifyBooking.exporter_id,
+                message: `Payment successful for booking ${bookingId}`,
+                type: "payment_success",
+              });
+            }
+            if (providerId) {
+              await createNotification({
+                user_id: providerId,
+                message: `Payment received for booking ${bookingId}`,
+                type: "payment_success",
+              });
+            }
+          } catch (err) {
+            console.error("Payment notifications failed", err);
           }
         } catch (dbErr) {
           console.error("DB operations failed, treating as offline:", dbErr);

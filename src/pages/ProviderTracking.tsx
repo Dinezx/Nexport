@@ -29,15 +29,14 @@ import {
 /* ---------------- CONSTANTS ---------------- */
 
 const TRACKING_STAGES = [
-  { value: "booking_confirmed", label: "Booking Confirmed", description: "Payment received and booking confirmed." },
-  { value: "container_assigned", label: "Container Assigned", description: "Container has been assigned to this booking." },
-  { value: "awaiting_pickup", label: "Awaiting Pickup", description: "Waiting for cargo pickup." },
-  { value: "cargo_picked_up", label: "Cargo Picked Up", description: "Cargo has been picked up." },
+  { value: "booked", label: "Booked", description: "Booking confirmed." },
+  { value: "payment_completed", label: "Payment Completed", description: "Payment received." },
+  { value: "container_allocated", label: "Container Allocated", description: "Container assigned to booking." },
+  { value: "cargo_received", label: "Cargo Received", description: "Cargo accepted at origin." },
+  { value: "loaded_on_vessel", label: "Loaded on Vessel", description: "Cargo loaded onto vessel." },
   { value: "in_transit", label: "In Transit", description: "Shipment is on the way." },
-  { value: "at_customs", label: "At Customs", description: "Shipment is being processed at customs." },
-  { value: "customs_cleared", label: "Customs Cleared", description: "Shipment has cleared customs." },
-  { value: "out_for_delivery", label: "Out for Delivery", description: "Shipment is out for final delivery." },
-  { value: "delivered", label: "Delivered", description: "Shipment has been delivered successfully." },
+  { value: "arrived_destination", label: "Arrived Destination", description: "Shipment reached destination port." },
+  { value: "delivered", label: "Delivered", description: "Shipment delivered." },
 ];
 
 /* ---------------- TYPES ---------------- */
@@ -48,6 +47,8 @@ type Booking = {
   destination: string;
   transport_mode: string;
   status: string;
+  exporter_id?: string;
+  provider_id?: string;
 };
 
 export default function ProviderTracking() {
@@ -123,12 +124,12 @@ export default function ProviderTracking() {
     setUpdatingBookingStatus(true);
 
     try {
-      const { error } = await supabase
-        .from("bookings")
-        .update({ status: bookingStatusValue })
-        .eq("id", bookingId);
-
-      if (error) throw error;
+      await import("@/services/shipmentService").then(({ updateShipmentStatus }) =>
+        updateShipmentStatus(bookingId, bookingStatusValue as any, {
+          exporterId: (booking as any)?.exporter_id,
+          providerId: (booking as any)?.provider_id,
+        })
+      );
 
       setBooking((prev) => prev ? { ...prev, status: bookingStatusValue } : prev);
       toast({ title: `Booking status updated to "${bookingStatusValue}"` });
@@ -235,10 +236,13 @@ export default function ProviderTracking() {
                         <SelectValue placeholder="Select status" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="paid">Paid</SelectItem>
-                        <SelectItem value="confirmed">Confirmed</SelectItem>
+                        <SelectItem value="booked">Booked</SelectItem>
+                        <SelectItem value="payment_completed">Payment Completed</SelectItem>
+                        <SelectItem value="container_allocated">Container Allocated</SelectItem>
+                        <SelectItem value="cargo_received">Cargo Received</SelectItem>
+                        <SelectItem value="loaded_on_vessel">Loaded on Vessel</SelectItem>
                         <SelectItem value="in_transit">In Transit</SelectItem>
-                        <SelectItem value="at_customs">At Customs</SelectItem>
+                        <SelectItem value="arrived_destination">Arrived Destination</SelectItem>
                         <SelectItem value="delivered">Delivered</SelectItem>
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                       </SelectContent>

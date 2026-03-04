@@ -18,6 +18,9 @@ import {
 } from "@/services/trackingService";
 import { buildRoutePoints } from "@/lib/routeSimulation";
 import { lookupKnownLocation } from "@/lib/routeSimulation";
+import { supabase } from "@/lib/supabase";
+import { uploadDocument, getBookingDocuments } from "@/services/documentService";
+import { submitProviderReview } from "@/services/providerReviewService";
 
 /* ---------------- TYPES ---------------- */
 
@@ -57,6 +60,12 @@ export default function Tracking() {
   const [events, setEvents] = useState<TrackingEvent[]>([]);
   const [gps, setGps] = useState<GPS | null>(null);
   const [routeCoords, setRouteCoords] = useState<RoutePoint[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [providerId, setProviderId] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewText, setReviewText] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -107,6 +116,29 @@ export default function Tracking() {
         
         if (bookingData) {
           setBooking(bookingData);
+          try {
+            const { data: container } = await supabase
+              .from("bookings")
+              .select("container_id")
+              .eq("id", bookingData.id)
+              .maybeSingle();
+            if (container?.container_id) {
+              const { data: providerRow } = await supabase
+                .from("containers")
+                .select("provider_id")
+                .eq("id", container.container_id)
+                .maybeSingle();
+              if (providerRow?.provider_id) setProviderId(providerRow.provider_id);
+            }
+          } catch (err) {
+            console.error("Provider lookup failed", err);
+          }
+          try {
+            const docs = await getBookingDocuments(bookingData.id);
+            setDocuments(docs);
+          } catch (err) {
+            console.error("Document fetch failed", err);
+          }
         }
         
         if (timelineEvents) {
@@ -140,6 +172,48 @@ export default function Tracking() {
       channel?.unsubscribe();
     };
   }, [bookingId]);
+
+  /* ---------- DOCUMENT UPLOAD ---------- */
+
+  const handleUploadDocument = async (fileList: FileList | null, type: "invoice" | "packing_list" | "bill_of_lading" | "customs") => {
+    if (!bookingId || !fileList || fileList.length === 0) return;
+    const file = fileList[0];
+    setUploadingDoc(true);
+    try {
+      await uploadDocument({ bookingId, file, type });
+      const docs = await getBookingDocuments(bookingId);
+      setDocuments(docs);
+      toast({ title: "Document uploaded" });
+    } catch (err) {
+      console.error("Upload failed", err);
+      toast({ title: "Upload failed", variant: "destructive" });
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  /* ---------- PROVIDER REVIEW ---------- */
+
+  const handleSubmitReview = async () => {
+    if (!bookingId || !providerId || reviewRating <= 0) return;
+    setSubmittingReview(true);
+    try {
+      await submitProviderReview({
+        booking_id: bookingId,
+        provider_id: providerId,
+        rating: reviewRating,
+        review: reviewText,
+      });
+      toast({ title: "Review submitted" });
+      setReviewRating(0);
+      setReviewText("");
+    } catch (err) {
+      console.error("Review failed", err);
+      toast({ title: "Could not submit review", variant: "destructive" });
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
 
   /* ---------- GEOCODE ORIGIN/DEST (fallback map) ---------- */
 
@@ -419,6 +493,78 @@ export default function Tracking() {
             ))}
           </CardContent>
         </Card>
+
+        {/* DOCUMENTS */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Shipping Documents</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(["invoice", "packing_list", "bill_of_lading", "customs"] as const).map((type) => (
+                <label key={type} className="flex items-center justify-between border rounded-md px-3 py-2 cursor-pointer">
+                  <span className="capitalize text-sm">{type.replace(/_/g, " ")}</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => handleUploadDocument(e.target.files, type)}
+                    disabled={uploadingDoc}
+                  />
+                  <span className="text-xs text-primary">Upload</span>
+                </label>
+              ))}
+            </div>
+
+            {documents.length > 0 ? (
+              <div className="space-y-2 text-sm">
+                {documents.map((doc) => (
+                  <a key={doc.path} href={doc.url} target="_blank" rel="noreferrer" className="flex items-center justify-between border rounded-md px-3 py-2 hover:bg-muted/50">
+                    <span>{doc.name}</span>
+                    <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleString()}</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* PROVIDER REVIEW */}
+        {booking?.status === "delivered" && providerId && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Rate Your Provider</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setReviewRating(r)}
+                    className={`h-10 w-10 rounded-full border ${reviewRating >= r ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                className="w-full rounded-md border bg-transparent p-2 text-sm"
+                rows={3}
+                placeholder="Share your experience"
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+              />
+              <button
+                className="inline-flex items-center px-4 py-2 rounded-md bg-primary text-primary-foreground"
+                onClick={handleSubmitReview}
+                disabled={submittingReview || reviewRating <= 0}
+              >
+                {submittingReview ? "Submitting..." : "Submit Review"}
+              </button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );

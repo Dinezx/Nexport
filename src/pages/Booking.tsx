@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { getOfflineSession, isSupabaseReachable } from "@/lib/offlineAuth";
 import { saveOfflineBooking } from "@/services/bookingService";
 import { predictEtaAndRisk } from "@/lib/prediction";
+import { predictDelayRisk } from "@/ml/delayPredictor";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   Card,
@@ -31,6 +32,7 @@ import {
   Plane,
   Loader2,
 } from "lucide-react";
+import { createNotification } from "@/services/notificationService";
 
 /* ---------------- CONSTANTS ---------------- */
 
@@ -1195,6 +1197,7 @@ export default function Booking() {
     weatherImpact: number;
     congestionImpact: string;
   } | null>(null);
+  const [delayRiskLabel, setDelayRiskLabel] = useState<string | null>(null);
 
   const [form, setForm] = useState<{
     booking_date: string;
@@ -1238,6 +1241,13 @@ export default function Booking() {
       return LOCATIONS.filter(l => l.toLowerCase().includes("icd"));
     }
     return LOCATIONS;
+  };
+
+  const renderCbmSuggestion = (cbm: number) => {
+    if (cbm <= 0) return "Enter your CBM to see the best option.";
+    if (cbm < 10) return "Suggestion: LCL (partial) is optimal for <10 CBM shipments.";
+    if (cbm <= 18) return "Suggestion: Compare LCL vs FCL — you are near the tipping point.";
+    return "Suggestion: FCL is more cost-effective for this volume.";
   };
 
   /* ---------------- FETCH AVAILABLE CONTAINERS ---------------- */
@@ -1515,12 +1525,23 @@ export default function Booking() {
       setDelayRisk(result.delayRisk);
       setDelayReason(result.delayReason);
       setEtaBreakdown(result.breakdown);
+      try {
+        const risk = predictDelayRisk(
+          `${form.origin} → ${form.destination}`,
+          form.destination,
+          form.booking_date || "any"
+        );
+        setDelayRiskLabel(risk.label.toUpperCase());
+      } catch {
+        setDelayRiskLabel(null);
+      }
     } catch (e) {
       console.error("Local ETA prediction failed", e);
       // Fallback to simple estimates
       const fallbackDays: Record<string, number> = { sea: 18, road: 7, air: 3 };
       setEtaDays(fallbackDays[form.transport] ?? 10);
       setEtaConfidence("low");
+      setDelayRiskLabel(null);
     } finally {
       setLoading(false);
     }
@@ -1587,6 +1608,8 @@ export default function Booking() {
         : selectedContainer?.total_space_cbm || null,
       price: priceINR,
       status: "pending_payment",
+      payment_status: "pending",
+      payout_status: "pending",
     };
 
     let booking: any = null;
@@ -1604,6 +1627,16 @@ export default function Booking() {
         return;
       }
       booking = data;
+
+      try {
+        await createNotification({
+          user_id: userId,
+          message: `Booking ${booking.id.slice(0, 8).toUpperCase()} created`,
+          type: "booking_created",
+        });
+      } catch (err) {
+        console.error("Booking notification failed", err);
+      }
     } else {
       // Offline — store in localStorage
       booking = {
@@ -1778,6 +1811,28 @@ export default function Booking() {
             }
           } else {
             console.log("✅ Supabase container updated: available_space_cbm =", newAvailableSpace);
+            try {
+              const providerNotification = await supabase
+                .from("containers")
+                .select("provider_id")
+                .eq("id", dbContainer.id)
+                .maybeSingle();
+              const providerId = providerNotification.data?.provider_id;
+              if (providerId) {
+                await createNotification({
+                  user_id: providerId,
+                  message: `Container allocated for booking ${booking.id.slice(0, 8).toUpperCase()}`,
+                  type: "container_allocated",
+                });
+              }
+              await createNotification({
+                user_id: userId,
+                message: `Container allocated for booking ${booking.id.slice(0, 8).toUpperCase()}`,
+                type: "container_allocated",
+              });
+            } catch (err) {
+              console.error("Container allocation notifications failed", err);
+            }
           }
         } else {
           console.warn("Could not find matching DB container to update");
@@ -2202,6 +2257,11 @@ export default function Booking() {
                             }}
                           />
                         )}
+                        {form.booking_mode === "partial" && form.space_cbm !== undefined && (
+                          <div className="mt-2 text-sm p-3 rounded-md border bg-muted/30">
+                            {renderCbmSuggestion(Number(form.space_cbm) || 0)}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center py-4 text-muted-foreground">
@@ -2309,6 +2369,11 @@ export default function Booking() {
                       return null;
                   }
                 })()}
+                {delayRiskLabel && (
+                  <p className="text-sm text-muted-foreground">
+                    Delay Risk: <span className="font-semibold">{delayRiskLabel}</span>
+                  </p>
+                )}
                 <p className="text-xl font-bold text-primary">
                   ₹ {priceINR.toLocaleString("en-IN")}
                 </p>

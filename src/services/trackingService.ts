@@ -12,6 +12,20 @@ export type TrackingEvent = {
   status: string;
   location: string;
   created_at?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  timestamp?: string | null;
+};
+
+export type TrackingEventInput = {
+  booking_id: string;
+  status: string;
+  location?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  title?: string | null;
+  description?: string | null;
+  timestamp?: string | null;
 };
 
 /* ---------- Offline tracking helpers ---------- */
@@ -101,7 +115,7 @@ export async function fetchTrackingCore(bookingId: string) {
 
   const { data: bookingData, error: bookingErr } = await supabase
     .from("bookings")
-    .select("id, origin, destination, transport_mode, status, eta_days, eta_confidence")
+    .select("id, origin, destination, transport_mode, status, eta_days, eta_confidence, exporter_id, container_id")
     .eq("id", bookingId)
     .single();
 
@@ -189,4 +203,40 @@ export async function insertTrackingEvent(params: {
   });
 
   if (error) throw error;
+}
+
+/* ---------- New tracking helpers (status-driven) ---------- */
+
+export async function addTrackingEvent(payload: TrackingEventInput) {
+  const { booking_id, status, location, latitude, longitude, title, description, timestamp } = payload;
+
+  const { data, error } = await supabase
+    .from("tracking_events")
+    .insert({
+      booking_id,
+      status,
+      location: location ?? "System",
+      latitude: typeof latitude === "number" ? latitude : null,
+      longitude: typeof longitude === "number" ? longitude : null,
+      timestamp: timestamp ?? new Date().toISOString(),
+      title: title ?? status.replace(/_/g, " "),
+      description: description ?? status.replace(/_/g, " "),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as TrackingEvent;
+}
+
+export async function getTrackingHistory(bookingId: string): Promise<TrackingEvent[]> {
+  const { data, error } = await supabase
+    .from("tracking_events")
+    .select("id, title, description, status, location, latitude, longitude, timestamp, created_at")
+    .eq("booking_id", bookingId)
+    .order("timestamp", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return (data || []) as TrackingEvent[];
 }

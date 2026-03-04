@@ -59,10 +59,10 @@ type TrackingEvent = {
 function normalizedStatus(
   s: string
 ): "pending" | "active" | "in-transit" | "delivered" | "completed" | "cancelled" {
-  if (s === "pending_payment" || s === "paid") return "pending";
-  if (s === "in_transit" || s === "at_origin_port" || s === "at_destination_port")
+  if (["pending_payment", "paid", "payment_completed", "booked"].includes(s)) return "pending";
+  if (["in_transit", "at_origin_port", "at_destination_port", "loaded_on_vessel", "container_allocated", "cargo_received"].includes(s))
     return "in-transit";
-  if (s === "delivered" || s === "completed") return "completed";
+  if (["arrived_destination", "delivered", "completed"].includes(s)) return "completed";
   if (s === "cancelled") return "cancelled";
   return "active";
 }
@@ -197,6 +197,9 @@ export default function ProviderDashboard() {
   const totalRevenue = bookings
     .filter((b) => b.status !== "cancelled" && b.price)
     .reduce((sum, b) => sum + (b.price ?? 0), 0);
+  const totalContainers = containers.length;
+  const activeShipments = bookings.filter((b) => !["completed", "delivered", "cancelled"].includes(b.status)).length;
+  const pendingPayouts = bookings.filter((b) => (b as any).payout_status === "pending").length;
 
   /* ---- render ---- */
   return (
@@ -242,7 +245,7 @@ export default function ProviderDashboard() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
           <StatCard
             title="Active Shipments"
             value={activeBookings.length}
@@ -262,6 +265,15 @@ export default function ProviderDashboard() {
             style={{ animationDelay: "100ms" }}
           />
           <StatCard
+            title="Completed Shipments"
+            value={completedBookings.length}
+            change={`${bookings.length} total bookings`}
+            changeType="positive"
+            icon={CheckCircle2}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "150ms" }}
+          />
+          <StatCard
             title="Completion Rate"
             value={`${onTimeRate}%`}
             change={`${completedBookings.length} delivered`}
@@ -278,6 +290,15 @@ export default function ProviderDashboard() {
             icon={DollarSign}
             className="animate-fade-in-up opacity-0"
             style={{ animationDelay: "300ms" }}
+          />
+          <StatCard
+            title="Pending Payouts"
+            value={pendingPayouts}
+            change={`${activeShipments} active shipments`}
+            changeType={pendingPayouts > 0 ? "neutral" : "positive"}
+            icon={RefreshCw}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "350ms" }}
           />
         </div>
 
