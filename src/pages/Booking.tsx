@@ -1459,10 +1459,8 @@ export default function Booking() {
           const loc = (c.origin || c.current_location || "").toLowerCase();
           return loc.includes(originCity) || selectedOrigin.includes(loc.split(",")[0].trim().split(" ")[0]);
         });
-        // If we have containers at origin, use only those; otherwise show all (better than nothing)
-        if (originMatched.length > 0) {
-          filteredContainers = originMatched;
-        }
+        // Only show containers that match the selected origin; if none match, return empty so the UI can prompt appropriately
+        filteredContainers = originMatched.length > 0 ? originMatched : [];
       }
 
       if (form.booking_mode === "partial") {
