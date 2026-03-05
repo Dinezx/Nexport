@@ -16,6 +16,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fetchMarketAnalytics, type MarketAnalytics } from "@/services/marketAnalytics";
 
 /* ---------- types ---------- */
 
@@ -51,6 +52,7 @@ export default function AdminDashboard() {
   const [containers, setContainers] = useState<ContainerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [analytics, setAnalytics] = useState<MarketAnalytics | null>(null);
 
   /* ---- fetch ---- */
   const fetchData = async () => {
@@ -75,6 +77,13 @@ export default function AdminDashboard() {
       setBookings((bkRes.data ?? []) as BookingRow[]);
       setProfiles((prRes.data ?? []) as ProfileRow[]);
       setContainers((ctrRes.data ?? []) as ContainerRow[]);
+
+      try {
+        const analyticsData = await fetchMarketAnalytics();
+        setAnalytics(analyticsData);
+      } catch (err) {
+        console.warn("Analytics fetch failed", err);
+      }
     } catch (e: any) {
       setError(e?.message || "Failed to load admin data");
     } finally {
@@ -200,6 +209,56 @@ export default function AdminDashboard() {
             icon={Activity}
           />
         </div>
+
+        {analytics && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-xl border border-border bg-card shadow-sm">
+              <div className="p-6 border-b border-border">
+                <h2 className="text-xl font-bold text-card-foreground">Busiest Routes</h2>
+                <p className="text-sm text-muted-foreground">Top performing lanes by bookings</p>
+              </div>
+              <div className="p-6 space-y-3">
+                {analytics.busiestRoutes.map((r) => (
+                  <div key={r.route} className="flex items-center justify-between p-3 rounded-lg bg-muted/40">
+                    <div>
+                      <p className="font-medium text-foreground">{r.route}</p>
+                      <p className="text-xs text-muted-foreground">Bookings {r.bookings} · Revenue ₹{r.revenue.toLocaleString("en-IN")}</p>
+                    </div>
+                    <Badge className="bg-primary/10 text-primary border-primary/20">{r.bookings}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card shadow-sm">
+              <div className="p-6 border-b border-border">
+                <h2 className="text-xl font-bold text-card-foreground">Demand & Revenue</h2>
+                <p className="text-sm text-muted-foreground">Monthly trends</p>
+              </div>
+              <div className="p-6 space-y-3 text-sm text-muted-foreground">
+                <p><strong>Active Shipments:</strong> {analytics.activeShipments} · <strong>Active Containers:</strong> {analytics.activeContainers}</p>
+                <div className="space-y-2">
+                  <p className="text-foreground font-medium">Demand Trend (bookings)</p>
+                  {analytics.demandTrends.slice(-4).map((t) => (
+                    <div key={t.month} className="flex items-center justify-between">
+                      <span>{t.month}</span>
+                      <span>{t.bookings}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-2 pt-2">
+                  <p className="text-foreground font-medium">Revenue Growth</p>
+                  {analytics.revenueGrowth.slice(-4).map((r) => (
+                    <div key={r.month} className="flex items-center justify-between">
+                      <span>{r.month}</span>
+                      <span>₹{r.revenue.toLocaleString("en-IN")}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Loading */}
         {loading && bookings.length === 0 && (

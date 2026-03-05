@@ -17,6 +17,7 @@ import MockPayment from "./pages/MockPayment";
 import Settings from "./pages/Settings";
 import Landing from "./pages/Landing";
 import ProtectedRoute from "./components/ProtectedRoute";
+import ContainerMarketplace from "./pages/ContainerMarketplace";
 
 
 function App() {
@@ -26,6 +27,16 @@ function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+
+      {/* Marketplace */}
+      <Route
+        path="/container-marketplace"
+        element={
+          <ProtectedRoute allowedRoles={["exporter", "provider"]}>
+            <ContainerMarketplace />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Exporter */}
       <Route

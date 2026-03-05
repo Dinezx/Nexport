@@ -15,10 +15,14 @@ import {
   MessageSquare,
   Loader2,
   RefreshCw,
+  Gauge,
+  TrendingUp,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { calculateProviderScore } from "@/services/providerScore";
+import { predictContainerDemand } from "@/ml/demandPredictor";
 
 /* ---------- types ---------- */
 
@@ -78,6 +82,8 @@ export default function ProviderDashboard() {
   const [trackingMap, setTrackingMap] = useState<Record<string, TrackingEvent[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [providerScore, setProviderScore] = useState<{ score: number; band: string } | null>(null);
+  const [demandPrediction, setDemandPrediction] = useState<{ level: string; route: string } | null>(null);
 
   /* ---- fetch ---- */
   const fetchData = async () => {
@@ -128,6 +134,30 @@ export default function ProviderDashboard() {
       } else {
         setBookings([]);
         setTrackingMap({});
+      }
+
+      // Provider score
+      if (user?.id) {
+        try {
+          const score = await calculateProviderScore(user.id);
+          setProviderScore({ score: score.score, band: score.band });
+        } catch (err) {
+          console.warn("Provider score unavailable", err);
+        }
+      }
+
+      // Demand prediction for the most recent lane
+      const laneRoute = bkRows[0]
+        ? `${bkRows[0].origin} -> ${bkRows[0].destination}`
+        : ctrRows[0]?.current_location
+        ? `${ctrRows[0].current_location} -> ${ctrRows[0].current_location}`
+        : "Chennai -> Singapore";
+
+      try {
+        const demand = await predictContainerDemand(laneRoute, new Date().getMonth() + 1);
+        setDemandPrediction({ level: demand.level, route: laneRoute });
+      } catch (err) {
+        console.warn("Demand prediction unavailable", err);
       }
     } catch (e: any) {
       setError(e?.message || "Failed to load dashboard");
@@ -299,6 +329,24 @@ export default function ProviderDashboard() {
             icon={RefreshCw}
             className="animate-fade-in-up opacity-0"
             style={{ animationDelay: "350ms" }}
+          />
+          <StatCard
+            title="Provider Score"
+            value={providerScore ? providerScore.score : "—"}
+            change={providerScore ? providerScore.band : "Scoring"}
+            changeType="neutral"
+            icon={Gauge}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "400ms" }}
+          />
+          <StatCard
+            title="Demand Signal"
+            value={demandPrediction ? demandPrediction.level : "—"}
+            change={demandPrediction ? demandPrediction.route : "Route insight"}
+            changeType="positive"
+            icon={TrendingUp}
+            className="animate-fade-in-up opacity-0"
+            style={{ animationDelay: "450ms" }}
           />
         </div>
 
