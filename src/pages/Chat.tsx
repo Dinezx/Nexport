@@ -48,7 +48,7 @@ export default function Chat() {
 
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [chatMode, setChatMode] = useState<ChatMode>("ai");
+  const [chatMode, setChatMode] = useState<ChatMode>("provider");
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -121,16 +121,14 @@ export default function Chat() {
         if (stored) {
           setMessages(JSON.parse(stored));
         } else {
-          // For AI mode, load existing conversation messages (backward compat)
+          const msgData = await fetchConversationMessages(conversation.id);
           if (chatMode === "ai") {
-            const msgData = await fetchConversationMessages(conversation.id);
-            // Filter to only AI/system/own messages
-            const aiMsgs = (msgData || []).filter(
-              (m: Message) => m.sender_role !== "provider"
-            );
+            // Filter to non-provider when in AI mode
+            const aiMsgs = (msgData || []).filter((m: Message) => m.sender_role !== "provider");
             setMessages(aiMsgs);
           } else {
-            setMessages([]);
+            // Provider mode shows all messages to avoid AI interference
+            setMessages(msgData || []);
           }
         }
       } catch (err) {
@@ -259,34 +257,7 @@ export default function Chat() {
         }
         setAiThinking(false);
       } else {
-        // Provider mode — simulate provider typing then reply
-        setProviderTyping(true);
-        // Random delay 1-3s to feel natural
-        const delay = 1000 + Math.random() * 2000;
-        await new Promise((r) => setTimeout(r, delay));
-        
-        try {
-          const aiResult = await sendAiMessage({
-            message: messageText,
-            bookingId: conversation.booking_id,
-            conversationId: `provider-${conversation.id}`,
-          });
-
-          if (aiResult?.offlineMessage) {
-            const providerMsg: Message = {
-              ...aiResult.offlineMessage,
-              sender_role: "provider",
-              sender_id: "offline-provider",
-            };
-            setMessageStatuses((prev) => ({ ...prev, [providerMsg.id]: "delivered" }));
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === providerMsg.id)) return prev;
-              return [...prev, providerMsg];
-            });
-          }
-        } catch (err) {
-          console.error("Provider reply error:", err);
-        }
+        // Provider mode — no AI auto-response; rely on real provider messages
         setProviderTyping(false);
       }
     } catch (err) {
