@@ -139,7 +139,7 @@ export default function ExporterBookings() {
 
       // 4.5️⃣ Email invoice to exporter (best-effort)
       try {
-        await sendInvoiceToExporter(bookingId);
+        await sendInvoiceToExporter(bookingId, userEmail);
       } catch (err) {
         console.warn("Invoice email skipped", err);
       }

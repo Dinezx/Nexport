@@ -222,7 +222,7 @@ async function generateInvoice(bookingId: string) {
   }
 }
 
-async function fetchExporterContact(bookingId: string) {
+async function fetchExporterContact(bookingId: string, fallbackEmail?: string | null, fallbackName?: string | null) {
   const { data: booking } = await supabase
     .from("bookings")
     .select("id, exporter_id, origin, destination, price, allocated_cbm, container_number, exporter_email")
@@ -231,8 +231,8 @@ async function fetchExporterContact(bookingId: string) {
 
   if (!booking) return null;
 
-  let email: string | null = booking.exporter_email ?? null;
-  let name: string | null = null;
+  let email: string | null = booking.exporter_email ?? fallbackEmail ?? null;
+  let name: string | null = fallbackName ?? null;
 
   if (!email && booking.exporter_id) {
     const { data: profile } = await supabase
@@ -247,8 +247,8 @@ async function fetchExporterContact(bookingId: string) {
   return { booking, email, name };
 }
 
-export async function sendInvoiceToExporter(bookingId: string) {
-  const contact = await fetchExporterContact(bookingId);
+export async function sendInvoiceToExporter(bookingId: string, fallbackEmail?: string | null, fallbackName?: string | null) {
+  const contact = await fetchExporterContact(bookingId, fallbackEmail, fallbackName);
   if (!contact || !contact.email) return null;
 
   const invoice = await generateInvoice(bookingId);

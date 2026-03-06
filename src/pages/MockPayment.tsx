@@ -26,6 +26,7 @@ import { createNotification } from "@/services/notificationService";
 import { optimizeContainerFill } from "@/services/containerAllocator";
 import { getOfflineBookings, updateOfflineBooking } from "@/services/bookingService";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
+import { getOfflineSession } from "@/lib/offlineAuth";
 
 export default function MockPayment() {
   const { bookingId } = useParams<{ bookingId: string }>();
@@ -35,6 +36,7 @@ export default function MockPayment() {
   const [amount, setAmount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [isOfflineBooking, setIsOfflineBooking] = useState(false);
+  const [userEmail, setUserEmail] = useState<string>("");
 
   /* ---------------- FETCH BOOKING AMOUNT ---------------- */
 
@@ -50,6 +52,8 @@ export default function MockPayment() {
         if (booking?.price) {
           setAmount(booking.price);
         }
+        const offlineUser = getOfflineSession();
+        if (offlineUser?.email) setUserEmail(offlineUser.email);
         return;
       }
 
@@ -77,6 +81,9 @@ export default function MockPayment() {
           setAmount(0);
           return;
         }
+
+        const { data: user } = await supabase.auth.getUser();
+        if (user?.user) setUserEmail(user.user.email ?? "");
 
         setAmount(data.price);
       } catch (err) {
@@ -143,7 +150,7 @@ export default function MockPayment() {
           await markBookingPaid(bookingId);
           await createTrackingEvents(bookingId);
           try {
-            await sendInvoiceToExporter(bookingId);
+            await sendInvoiceToExporter(bookingId, userEmail);
           } catch (err) {
             console.warn("Invoice email skipped", err);
           }
