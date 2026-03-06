@@ -21,7 +21,6 @@ import {
   createTrackingEvents,
   ensureConversation,
   releaseBookingHold,
-  sendInvoiceToExporter,
   processInvoiceAfterPayment,
 } from "@/services/paymentService";
 
@@ -140,8 +139,15 @@ export default function ExporterBookings() {
 
       // 4.5️⃣ Email invoice to exporter (best-effort)
       try {
-        await sendInvoiceToExporter(bookingId, userEmail);
-        await processInvoiceAfterPayment(bookingId, { fallbackEmail: userEmail });
+        const invoiceResult = await processInvoiceAfterPayment(bookingId, { fallbackEmail: userEmail });
+        if (!invoiceResult?.url) {
+          console.warn("Invoice was not generated or uploaded", { bookingId });
+          toast({
+            title: "Invoice pending",
+            description: "We could not generate the invoice. Please retry from tracking or contact support.",
+            variant: "destructive",
+          });
+        }
       } catch (err) {
         console.warn("Invoice email skipped", err);
       }

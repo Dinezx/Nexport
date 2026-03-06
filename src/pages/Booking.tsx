@@ -1258,6 +1258,7 @@ export default function Booking() {
     setLoadingContainers(true);
 
     const sizeFormatted = `${form.container_size}ft`;
+    const normalizeSize = (v?: string | null) => (v || "").replace(/\s+/g, "").toLowerCase();
 
     // Helper: generate demo containers as offline fallback
     const getDemoContainers = () => {
@@ -1334,7 +1335,7 @@ export default function Booking() {
       let queryError: any = null;
 
       try {
-        const res = await supabase
+          const res = await supabase
           .from("containers")
           .select("*")
           .eq("container_type", form.container_type)
@@ -1358,7 +1359,7 @@ export default function Booking() {
           // Filter client-side to handle any column name variations
           data = allData.filter((c: any) =>
             (c.container_type === form.container_type || c.type === form.container_type) &&
-            (c.container_size === sizeFormatted || c.size === sizeFormatted)
+            (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted))
           );
           console.log("After client-side filter:", data.length, "rows");
           queryError = res2.error;
@@ -1383,7 +1384,7 @@ export default function Booking() {
           console.log("Anon client all containers:", anonData.length, "rows");
           data = anonData.filter((c: any) =>
             (c.container_type === form.container_type || c.type === form.container_type) &&
-            (c.container_size === sizeFormatted || c.size === sizeFormatted)
+            (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted))
           );
           console.log("Anon after filter:", data.length, "rows");
         } catch (e3) {
@@ -1451,7 +1452,7 @@ export default function Booking() {
         };
       });
 
-      // Filter by origin location — only show containers at/near the selected origin
+      // Filter by origin location — prefer matches, but fallback to full list if none
       const selectedOrigin = (form.origin || "").toLowerCase();
       if (selectedOrigin) {
         const originCity = selectedOrigin.split(",")[0].trim().split(" ")[0]; // e.g. "cochin"
@@ -1459,8 +1460,8 @@ export default function Booking() {
           const loc = (c.origin || c.current_location || "").toLowerCase();
           return loc.includes(originCity) || selectedOrigin.includes(loc.split(",")[0].trim().split(" ")[0]);
         });
-        // Only show containers that match the selected origin; if none match, return empty so the UI can prompt appropriately
-        filteredContainers = originMatched.length > 0 ? originMatched : [];
+        // If nothing matched, keep the full list so the UI can still show options
+        filteredContainers = originMatched.length > 0 ? originMatched : filteredContainers;
       }
 
       if (form.booking_mode === "partial") {

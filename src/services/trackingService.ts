@@ -218,7 +218,7 @@ export async function addTrackingEvent(payload: TrackingEventInput) {
       location: location ?? "System",
       latitude: typeof latitude === "number" ? latitude : null,
       longitude: typeof longitude === "number" ? longitude : null,
-      timestamp: timestamp ?? new Date().toISOString(),
+      // If your table lacks a timestamp column, rely on created_at
       title: title ?? status.replace(/_/g, " "),
       description: description ?? status.replace(/_/g, " "),
     })
@@ -232,9 +232,8 @@ export async function addTrackingEvent(payload: TrackingEventInput) {
 export async function getTrackingHistory(bookingId: string): Promise<TrackingEvent[]> {
   const { data, error } = await supabase
     .from("tracking_events")
-    .select("id, title, description, status, location, latitude, longitude, timestamp, created_at")
+    .select("id, title, description, status, location, latitude, longitude, created_at")
     .eq("booking_id", bookingId)
-    .order("timestamp", { ascending: true })
     .order("created_at", { ascending: true });
 
   if (error) throw error;
