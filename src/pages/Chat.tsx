@@ -284,7 +284,7 @@ export default function Chat() {
 
   return (
     <DashboardLayout userType={user?.role === "provider" ? "provider" : "exporter"}>
-      <div className="h-[calc(100vh-8rem)] flex rounded-xl border bg-zinc-950 overflow-hidden">
+      <div className="h-[calc(100vh-6rem)] flex rounded-xl border bg-zinc-950 overflow-hidden">
 
         {/* ——— Conversation Sidebar ——— */}
         <div className="w-80 border-r flex flex-col bg-zinc-900/50">
@@ -354,7 +354,7 @@ export default function Chat() {
         </div>
 
         {/* ——— Chat Area ——— */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-full">
           {/* Header with Mode Tabs */}
           <div className="border-b">
             <div className="p-4 flex justify-between items-center">
@@ -426,7 +426,7 @@ export default function Chat() {
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-auto p-4 space-y-4">
+          <div className="flex-1 overflow-auto p-4 space-y-4 bg-zinc-900/40">
             {!conversation && (
               <div className="h-full flex flex-col items-center justify-center text-zinc-500">
                 <MessageSquare className="h-12 w-12 mb-3 text-zinc-700" />
