@@ -18,6 +18,7 @@ import {
   createTrackingEvents,
   ensureConversation,
   sendInvoiceToExporter,
+  processInvoiceAfterPayment,
   // internal helpers
 } from "@/services/paymentService";
 import { updateShipmentStatus } from "@/services/shipmentService";
@@ -151,6 +152,7 @@ export default function MockPayment() {
           await createTrackingEvents(bookingId);
           try {
             await sendInvoiceToExporter(bookingId, userEmail);
+            await processInvoiceAfterPayment(bookingId, { fallbackEmail: userEmail });
           } catch (err) {
             console.warn("Invoice email skipped", err);
           }

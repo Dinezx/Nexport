@@ -26,3 +26,22 @@ export async function sendEmail(payload: EmailPayload) {
 
     return res.json().catch(() => ({}));
 }
+
+export async function sendInvoiceEmail(exporterEmail: string, invoiceUrl: string, bookingId: string) {
+    if (!exporterEmail || !invoiceUrl) return null;
+
+    const subject = "NEXPORT Shipment Invoice";
+    const text = [
+        "Your shipment booking has been successfully confirmed.",
+        "Please find your invoice attached.",
+        `Invoice: ${invoiceUrl}`,
+    ].join("\n");
+
+    const html = `
+        <p>Your shipment booking has been successfully confirmed.</p>
+        <p>Please find your invoice attached.</p>
+        <p><a href="${invoiceUrl}" target="_blank" rel="noreferrer">Download Invoice (Booking ${bookingId})</a></p>
+    `;
+
+    return sendEmail({ to: exporterEmail, subject, text, html });
+}

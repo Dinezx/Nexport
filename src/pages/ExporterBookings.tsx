@@ -22,6 +22,7 @@ import {
   ensureConversation,
   releaseBookingHold,
   sendInvoiceToExporter,
+  processInvoiceAfterPayment,
 } from "@/services/paymentService";
 
 /* ---------------- Types ---------------- */
@@ -140,6 +141,7 @@ export default function ExporterBookings() {
       // 4.5️⃣ Email invoice to exporter (best-effort)
       try {
         await sendInvoiceToExporter(bookingId, userEmail);
+        await processInvoiceAfterPayment(bookingId, { fallbackEmail: userEmail });
       } catch (err) {
         console.warn("Invoice email skipped", err);
       }
@@ -316,6 +318,14 @@ export default function ExporterBookings() {
                           <MessageSquare className="mr-2 h-4 w-4" />
                           Chat
                         </Link>
+                      </Button>
+                    )}
+
+                    {b.invoice_url && (
+                      <Button size="sm" variant="secondary" asChild>
+                        <a href={b.invoice_url} target="_blank" rel="noreferrer">
+                          Download Invoice
+                        </a>
                       </Button>
                     )}
 

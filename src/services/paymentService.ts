@@ -2,9 +2,9 @@ import { supabase } from "@/lib/supabase";
 import { updateShipmentStatus } from "@/services/shipmentService";
 import { addTrackingEvent } from "@/services/trackingService";
 import { createNotification } from "@/services/notificationService";
-import { uploadInvoice } from "@/services/invoiceService";
+import { uploadInvoice, generateInvoicePDF, uploadInvoiceToStorage } from "@/services/invoiceService";
 import { optimizeContainerFill } from "@/services/containerAllocator";
-import { sendEmail } from "@/services/emailService";
+import { sendEmail, sendInvoiceEmail } from "@/services/emailService";
 
 /* ---------- Razorpay type declarations ---------- */
 declare global {
@@ -225,7 +225,7 @@ async function generateInvoice(bookingId: string) {
 async function fetchExporterContact(bookingId: string, fallbackEmail?: string | null, fallbackName?: string | null) {
   const { data: booking } = await supabase
     .from("bookings")
-    .select("id, exporter_id, origin, destination, price, allocated_cbm, container_number, exporter_email")
+    .select("id, exporter_id, origin, destination, price, allocated_cbm, container_number, exporter_email, container_id, container_type, container_size, booking_mode")
     .eq("id", bookingId)
     .maybeSingle();
 
@@ -233,6 +233,24 @@ async function fetchExporterContact(bookingId: string, fallbackEmail?: string | 
 
   let email: string | null = booking.exporter_email ?? fallbackEmail ?? null;
   let name: string | null = fallbackName ?? null;
+  let providerName: string | null = null;
+
+  if (booking.container_id) {
+    const { data: container } = await supabase
+      .from("containers")
+      .select("provider_id")
+      .eq("id", booking.container_id)
+      .maybeSingle();
+
+    if (container?.provider_id) {
+      const { data: providerProfile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", container.provider_id)
+        .maybeSingle();
+      if (providerProfile?.full_name) providerName = providerProfile.full_name;
+    }
+  }
 
   if (!email && booking.exporter_id) {
     const { data: profile } = await supabase
@@ -244,46 +262,73 @@ async function fetchExporterContact(bookingId: string, fallbackEmail?: string | 
     if (profile?.full_name) name = profile.full_name;
   }
 
-  return { booking, email, name };
+  return { booking: { ...booking, provider_name: providerName }, email, name };
 }
 
 export async function sendInvoiceToExporter(bookingId: string, fallbackEmail?: string | null, fallbackName?: string | null) {
-  const contact = await fetchExporterContact(bookingId, fallbackEmail, fallbackName);
-  if (!contact || !contact.email) return null;
+  // Legacy path retained; now delegates to full invoice flow
+  return processInvoiceAfterPayment(bookingId, { fallbackEmail, fallbackName });
+}
 
-  const invoice = await generateInvoice(bookingId);
-  if (!invoice?.url) return invoice;
+export async function processInvoiceAfterPayment(
+  bookingId: string,
+  opts: { fallbackEmail?: string | null; fallbackName?: string | null } = {},
+) {
+  const contact = await fetchExporterContact(bookingId, opts.fallbackEmail, opts.fallbackName);
+  if (!contact) return null;
 
-  const subject = `Invoice for Booking ${bookingId}`;
-  const amount = contact.booking.price ?? 0;
-  const route = `${contact.booking.origin} → ${contact.booking.destination}`;
+  // 1) fetch payment data
+  const { data: paymentRow } = await supabase
+    .from("payments")
+    .select("amount, currency, transaction_ref, created_at")
+    .eq("booking_id", bookingId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const text = [
-    `Hi ${contact.name || "there"},`,
-    ``,
-    `Your payment for booking ${bookingId} (${route}) is confirmed.`,
-    `Amount: ₹${amount.toLocaleString("en-IN")}.`,
-    `Invoice: ${invoice.url}`,
-    ``,
-    `Thanks,`,
-    `Nexport Team`,
-  ].join("\n");
+  // 2) build invoice PDF
+  const pdfBytes = await generateInvoicePDF(
+    {
+      id: contact.booking.id,
+      origin: contact.booking.origin,
+      destination: contact.booking.destination,
+      container_type: contact.booking.container_type,
+      container_size: contact.booking.container_size,
+      booking_mode: contact.booking.booking_mode,
+      allocated_cbm: contact.booking.allocated_cbm,
+      price: contact.booking.price,
+      exporter_name: contact.name,
+      provider_name: contact.booking.provider_name,
+    },
+    {
+      transaction_ref: paymentRow?.transaction_ref,
+      amount: paymentRow?.amount ?? contact.booking.price,
+      currency: paymentRow?.currency ?? "INR",
+      created_at: paymentRow?.created_at ?? new Date().toISOString(),
+    }
+  );
 
-  const html = `
-    <p>Hi ${contact.name || "there"},</p>
-    <p>Your payment for booking <strong>${bookingId}</strong> (${route}) is confirmed.</p>
-    <p>Amount: <strong>₹${amount.toLocaleString("en-IN")}</strong></p>
-    <p><a href="${invoice.url}" target="_blank" rel="noreferrer">Download Invoice</a></p>
-    <p>Thanks,<br/>Nexport Team</p>
-  `;
+  // 3) upload to storage
+  const invoiceUrl = await uploadInvoiceToStorage(pdfBytes, bookingId);
+  if (!invoiceUrl) return null;
 
+  // 4) persist URL
   try {
-    await sendEmail({ to: contact.email, subject, text, html });
+    await supabase.from("bookings").update({ invoice_url: invoiceUrl }).eq("id", bookingId);
+  } catch (err) {
+    console.error("Failed to store invoice URL", err);
+  }
+
+  // 5) email exporter
+  try {
+    if (contact.email) {
+      await sendInvoiceEmail(contact.email, invoiceUrl, bookingId);
+    }
   } catch (err) {
     console.warn("Invoice email send failed", err);
   }
 
-  return invoice;
+  return { url: invoiceUrl };
 }
 
 export async function ensureConversation(bookingId: string) {
