@@ -11,29 +11,56 @@ import {
 } from "@/components/ui/card";
 import { Loader2, MapPin, CheckCircle, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import {
-  fetchTrackingCore,
-  subscribeTrackingEvents,
-  fetchLiveLocation,
-} from "@/services/trackingService";
-import { buildRoutePoints } from "@/lib/routeSimulation";
-import { lookupKnownLocation } from "@/lib/routeSimulation";
-import { supabase } from "@/lib/supabase";
-import { uploadDocument, getBookingDocuments } from "@/services/documentService";
-import { submitProviderReview } from "@/services/providerReviewService";
-
-/* ---------------- TYPES ---------------- */
+              {docTypes.map(({ key, label }) => {
+                const doc = docsByType[key];
+                return (
+                  <div key={key} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+                    <div className="flex flex-col gap-1 text-left">
+                      <span className="text-sm font-medium">{label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {doc?.displayName || "Not uploaded"}
+                      </span>
+                      {doc?.created_at && (
+                        <span className="text-[11px] text-muted-foreground">Uploaded {new Date(doc.created_at).toLocaleString()}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {doc?.url && (
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs font-semibold text-primary underline"
+                        >
+                          View
+                        </a>
+                      )}
+                      <label htmlFor={`upload-${key}`} className="text-xs font-semibold text-primary cursor-pointer">
+                        {uploadingDoc ? "..." : "Upload"}
+                      </label>
+                      <input
+                        id={`upload-${key}`}
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => handleUploadDocument(e.target.files, key)}
+                        disabled={uploadingDoc}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
 
 type Booking = {
   id: string;
-  origin: string;
-  destination: string;
-  transport_mode: string;
-  status: string;
-  eta_days?: number | null;
-  eta_confidence?: string | null;
-};
-
+              <div className="space-y-2 text-sm">
+                {documents.map((doc) => (
+                  <a key={doc.path} href={doc.url} target="_blank" rel="noreferrer" className="flex items-center justify-between border rounded-md px-3 py-2 hover:bg-muted/50">
+                    <span>{doc.name}</span>
+                    <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleString()}</span>
+                  </a>
+                ))}
+              </div>
 type TrackingEvent = {
   id: string;
   title: string;
@@ -66,6 +93,14 @@ export default function Tracking() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+
+  type DocType = "invoice" | "packing_list" | "bill_of_lading" | "customs";
+  const docTypes: { key: DocType; label: string }[] = [
+    { key: "invoice", label: "Invoice" },
+    { key: "packing_list", label: "Packing List" },
+    { key: "bill_of_lading", label: "Bill Of Lading" },
+    { key: "customs", label: "Customs" },
+  ];
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -214,6 +249,17 @@ export default function Tracking() {
       setSubmittingReview(false);
     }
   };
+
+  const docsByType = documents.reduce<Partial<Record<DocType, any>>>((acc, doc) => {
+    const pathParts = (doc.path || "").split("/");
+    const nameParts = (doc.name || "").split("/");
+    const key = (pathParts[1] || nameParts[0]) as DocType;
+    if (docTypes.some((d) => d.key === key)) {
+      const displayName = pathParts.slice(2).join("/") || nameParts.slice(1).join("/") || doc.name;
+      acc[key] = { ...doc, displayName };
+    }
+    return acc;
+  }, {});
 
   /* ---------- GEOCODE ORIGIN/DEST (fallback map) ---------- */
 
