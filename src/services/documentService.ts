@@ -1,15 +1,17 @@
 import { supabase } from "@/lib/supabase";
 
 const BUCKET = "documents";
+const DOC_TYPES = ["invoice", "packing_list", "bill_of_lading", "customs"] as const;
+export type DocumentType = (typeof DOC_TYPES)[number];
 
-function buildPath(bookingId: string, docType: string, fileName: string) {
+function buildPath(bookingId: string, docType: DocumentType, fileName: string) {
     return `${bookingId}/${docType}/${Date.now()}-${fileName}`;
 }
 
 export async function uploadDocument(params: {
     bookingId: string;
     file: File;
-    type: "invoice" | "packing_list" | "bill_of_lading" | "customs";
+    type: DocumentType;
 }) {
     const { bookingId, file, type } = params;
     const path = buildPath(bookingId, type, file.name);
@@ -39,22 +41,34 @@ export async function uploadDocument(params: {
 }
 
 export async function getBookingDocuments(bookingId: string) {
-    const prefix = `${bookingId}/`;
-    const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
-        limit: 100,
-        offset: 0,
-        sortBy: { column: "created_at", order: "desc" },
-    });
+    const results: any[] = [];
 
-    if (error) throw error;
+    for (const type of DOC_TYPES) {
+        const prefix = `${bookingId}/${type}`;
+        const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
+            limit: 50,
+            offset: 0,
+            sortBy: { column: "created_at", order: "desc" },
+        });
 
-    return (data || []).map((item) => {
-        const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(`${prefix}${item.name}`);
-        return {
-            name: item.name,
-            path: `${prefix}${item.name}`,
-            url: urlData.publicUrl,
-            created_at: item.created_at,
-        };
-    });
+        if (error) {
+            // Skip this type but continue others
+            console.warn("Document list failed for", prefix, error.message);
+            continue;
+        }
+
+        (data || []).forEach((item) => {
+            const path = `${prefix}/${item.name}`;
+            const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+            results.push({
+                name: item.name,
+                path,
+                url: urlData.publicUrl,
+                created_at: item.created_at,
+            });
+        });
+    }
+
+    // Newest first across all types
+    return results.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }

@@ -17,12 +17,12 @@ import {
   markBookingPaid,
   createTrackingEvents,
   ensureConversation,
+  sendInvoiceToExporter,
   // internal helpers
 } from "@/services/paymentService";
 import { updateShipmentStatus } from "@/services/shipmentService";
 import { addTrackingEvent } from "@/services/trackingService";
 import { createNotification } from "@/services/notificationService";
-import { uploadInvoice } from "@/services/invoiceService";
 import { optimizeContainerFill } from "@/services/containerAllocator";
 import { getOfflineBookings, updateOfflineBooking } from "@/services/bookingService";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
@@ -142,6 +142,11 @@ export default function MockPayment() {
           });
           await markBookingPaid(bookingId);
           await createTrackingEvents(bookingId);
+          try {
+            await sendInvoiceToExporter(bookingId);
+          } catch (err) {
+            console.warn("Invoice email skipped", err);
+          }
           // Shipment + tracking lifecycle
           try {
             await updateShipmentStatus(bookingId, "payment_completed");
@@ -191,18 +196,6 @@ export default function MockPayment() {
               }
             }
 
-            // Invoice
-            try {
-              await uploadInvoice({
-                bookingId,
-                containerNumber: booking?.container_number,
-                route: `${booking?.origin ?? ""} → ${booking?.destination ?? ""}`,
-                cbm: booking?.allocated_cbm ?? 0,
-                price: booking?.price ?? amount,
-              });
-            } catch (err) {
-              console.error("Invoice upload failed", err);
-            }
           } catch (err) {
             console.error("Post-payment ops failed", err);
           }

@@ -21,6 +21,7 @@ import {
   createTrackingEvents,
   ensureConversation,
   releaseBookingHold,
+  sendInvoiceToExporter,
 } from "@/services/paymentService";
 
 /* ---------------- Types ---------------- */
@@ -135,6 +136,13 @@ export default function ExporterBookings() {
 
       // 4️⃣ Create tracking events
       await createTrackingEvents(bookingId);
+
+      // 4.5️⃣ Email invoice to exporter (best-effort)
+      try {
+        await sendInvoiceToExporter(bookingId);
+      } catch (err) {
+        console.warn("Invoice email skipped", err);
+      }
 
       // 5️⃣ Container space was already reserved at booking creation time (pending_payment hold)
       // No need to deduct again — just ensure conversation exists

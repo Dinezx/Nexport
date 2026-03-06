@@ -4,6 +4,7 @@ import { addTrackingEvent } from "@/services/trackingService";
 import { createNotification } from "@/services/notificationService";
 import { uploadInvoice } from "@/services/invoiceService";
 import { optimizeContainerFill } from "@/services/containerAllocator";
+import { sendEmail } from "@/services/emailService";
 
 /* ---------- Razorpay type declarations ---------- */
 declare global {
@@ -219,6 +220,70 @@ async function generateInvoice(bookingId: string) {
     console.error("Invoice generation failed", err);
     return null;
   }
+}
+
+async function fetchExporterContact(bookingId: string) {
+  const { data: booking } = await supabase
+    .from("bookings")
+    .select("id, exporter_id, origin, destination, price, allocated_cbm, container_number, exporter_email")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (!booking) return null;
+
+  let email: string | null = booking.exporter_email ?? null;
+  let name: string | null = null;
+
+  if (!email && booking.exporter_id) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("email, full_name")
+      .eq("id", booking.exporter_id)
+      .maybeSingle();
+    if (profile?.email) email = profile.email;
+    if (profile?.full_name) name = profile.full_name;
+  }
+
+  return { booking, email, name };
+}
+
+export async function sendInvoiceToExporter(bookingId: string) {
+  const contact = await fetchExporterContact(bookingId);
+  if (!contact || !contact.email) return null;
+
+  const invoice = await generateInvoice(bookingId);
+  if (!invoice?.url) return invoice;
+
+  const subject = `Invoice for Booking ${bookingId}`;
+  const amount = contact.booking.price ?? 0;
+  const route = `${contact.booking.origin} → ${contact.booking.destination}`;
+
+  const text = [
+    `Hi ${contact.name || "there"},`,
+    ``,
+    `Your payment for booking ${bookingId} (${route}) is confirmed.`,
+    `Amount: ₹${amount.toLocaleString("en-IN")}.`,
+    `Invoice: ${invoice.url}`,
+    ``,
+    `Thanks,`,
+    `Nexport Team`,
+  ].join("\n");
+
+  const html = `
+    <p>Hi ${contact.name || "there"},</p>
+    <p>Your payment for booking <strong>${bookingId}</strong> (${route}) is confirmed.</p>
+    <p>Amount: <strong>₹${amount.toLocaleString("en-IN")}</strong></p>
+    <p><a href="${invoice.url}" target="_blank" rel="noreferrer">Download Invoice</a></p>
+    <p>Thanks,<br/>Nexport Team</p>
+  `;
+
+  try {
+    await sendEmail({ to: contact.email, subject, text, html });
+  } catch (err) {
+    console.warn("Invoice email send failed", err);
+  }
+
+  return invoice;
 }
 
 export async function ensureConversation(bookingId: string) {

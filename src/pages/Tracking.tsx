@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchTrackingCore, subscribeTrackingEvents, fetchLiveLocation } from "@/services/trackingService";
 import { buildRoutePoints, lookupKnownLocation } from "@/lib/routeSimulation";
 import { supabase } from "@/lib/supabase";
-import { uploadDocument, getBookingDocuments } from "@/services/documentService";
+import { uploadDocument, getBookingDocuments, type DocumentType } from "@/services/documentService";
 import { submitProviderReview } from "@/services/providerReviewService";
 
 type Booking = {
@@ -55,7 +55,7 @@ export default function Tracking() {
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  type DocType = "invoice" | "packing_list" | "bill_of_lading" | "customs";
+  type DocType = DocumentType;
   const docTypes: { key: DocType; label: string }[] = [
     { key: "invoice", label: "Invoice" },
     { key: "packing_list", label: "Packing List" },
