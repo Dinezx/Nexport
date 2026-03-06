@@ -123,13 +123,21 @@ export async function isSupabaseReachable(
   timeoutMs = 4000
 ): Promise<boolean> {
   try {
+    const apiKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(`${supabaseUrl}/auth/v1/health`, {
+      headers: apiKey
+        ? {
+          apikey: apiKey,
+          Authorization: `Bearer ${apiKey}`,
+        }
+        : undefined,
       signal: controller.signal,
     });
     clearTimeout(timer);
-    return res.ok;
+    // 200 = OK, 401 = auth required but host reachable
+    return res.ok || res.status === 401;
   } catch {
     return false;
   }
