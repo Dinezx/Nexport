@@ -3,64 +3,25 @@ import "@/lib/leafletFix";
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, MapPin, CheckCircle, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-              {docTypes.map(({ key, label }) => {
-                const doc = docsByType[key];
-                return (
-                  <div key={key} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
-                    <div className="flex flex-col gap-1 text-left">
-                      <span className="text-sm font-medium">{label}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {doc?.displayName || "Not uploaded"}
-                      </span>
-                      {doc?.created_at && (
-                        <span className="text-[11px] text-muted-foreground">Uploaded {new Date(doc.created_at).toLocaleString()}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {doc?.url && (
-                        <a
-                          href={doc.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs font-semibold text-primary underline"
-                        >
-                          View
-                        </a>
-                      )}
-                      <label htmlFor={`upload-${key}`} className="text-xs font-semibold text-primary cursor-pointer">
-                        {uploadingDoc ? "..." : "Upload"}
-                      </label>
-                      <input
-                        id={`upload-${key}`}
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => handleUploadDocument(e.target.files, key)}
-                        disabled={uploadingDoc}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+import { fetchTrackingCore, subscribeTrackingEvents, fetchLiveLocation } from "@/services/trackingService";
+import { buildRoutePoints, lookupKnownLocation } from "@/lib/routeSimulation";
+import { supabase } from "@/lib/supabase";
+import { uploadDocument, getBookingDocuments } from "@/services/documentService";
+import { submitProviderReview } from "@/services/providerReviewService";
 
 type Booking = {
   id: string;
-              <div className="space-y-2 text-sm">
-                {documents.map((doc) => (
-                  <a key={doc.path} href={doc.url} target="_blank" rel="noreferrer" className="flex items-center justify-between border rounded-md px-3 py-2 hover:bg-muted/50">
-                    <span>{doc.name}</span>
-                    <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleString()}</span>
-                  </a>
-                ))}
-              </div>
+  origin: string;
+  destination: string;
+  transport_mode: string;
+  status: string;
+  eta_days?: number | null;
+  eta_confidence?: string | null;
+};
+
 type TrackingEvent = {
   id: string;
   title: string;
@@ -547,24 +508,57 @@ export default function Tracking() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              {(["invoice", "packing_list", "bill_of_lading", "customs"] as const).map((type) => (
-                <label key={type} className="flex items-center justify-between border rounded-md px-3 py-2 cursor-pointer">
-                  <span className="capitalize text-sm">{type.replace(/_/g, " ")}</span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => handleUploadDocument(e.target.files, type)}
-                    disabled={uploadingDoc}
-                  />
-                  <span className="text-xs text-primary">Upload</span>
-                </label>
-              ))}
+              {docTypes.map(({ key, label }) => {
+                const doc = docsByType[key];
+                return (
+                  <div key={key} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+                    <div className="flex flex-col gap-1 text-left">
+                      <span className="text-sm font-medium">{label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {doc?.displayName || "Not uploaded"}
+                      </span>
+                      {doc?.created_at && (
+                        <span className="text-[11px] text-muted-foreground">Uploaded {new Date(doc.created_at).toLocaleString()}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {doc?.url && (
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs font-semibold text-primary underline"
+                        >
+                          View
+                        </a>
+                      )}
+                      <label htmlFor={`upload-${key}`} className="text-xs font-semibold text-primary cursor-pointer">
+                        {uploadingDoc ? "..." : "Upload"}
+                      </label>
+                      <input
+                        id={`upload-${key}`}
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => handleUploadDocument(e.target.files, key)}
+                        disabled={uploadingDoc}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {documents.length > 0 ? (
               <div className="space-y-2 text-sm">
                 {documents.map((doc) => (
-                  <a key={doc.path} href={doc.url} target="_blank" rel="noreferrer" className="flex items-center justify-between border rounded-md px-3 py-2 hover:bg-muted/50">
+                  <a
+                    key={doc.path}
+                    href={doc.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between border rounded-md px-3 py-2 hover:bg-muted/50"
+                  >
                     <span>{doc.name}</span>
                     <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleString()}</span>
                   </a>
