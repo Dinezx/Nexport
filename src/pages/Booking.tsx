@@ -1256,230 +1256,60 @@ export default function Booking() {
     if (!form.container_type || !form.container_size) return;
 
     setLoadingContainers(true);
+    console.log("[containers] fetch start", {
+      type: form.container_type,
+      size: form.container_size,
+      mode: form.booking_mode,
+      origin: form.origin,
+    });
 
     const sizeFormatted = `${form.container_size}ft`;
     const normalizeSize = (v?: string | null) => (v || "").replace(/\s+/g, "").toLowerCase();
 
-    // Helper: generate demo containers as offline fallback
-    const getDemoContainers = () => {
-      const totalCbm = form.container_size === "20" ? 33 : 67;
-      const origin = form.origin || "Chennai Port, India";
-
-      // Check localStorage for previously-booked containers
-      const CONTAINER_KEY = "nexport_offline_containers";
-      const stored: any[] = (() => {
-        try { return JSON.parse(localStorage.getItem(CONTAINER_KEY) || "[]"); }
-        catch { return []; }
-      })();
-
-      // Match stored containers by type/size/origin
-      const matching = stored.filter((c: any) => {
-        const cType = c.container_type || c.type;
-        const cSize = c.container_size || c.size;
-        return cType === form.container_type && cSize === sizeFormatted;
-      });
-
-      // If we have stored containers (i.e. user previously booked), use them
-      if (matching.length > 0) {
-        return matching
-          .filter((c: any) => c.status !== "full") // hide fully used ones
-          .map((c: any) => ({
-            ...c,
-            effective_available_cbm: c.available_space_cbm ?? c.total_space_cbm ?? totalCbm,
-          }));
-      }
-
-      // Otherwise generate fresh demo containers
-      const demo1Id = `demo-${form.container_type}-${form.container_size}-1`;
-      const demo2Id = `demo-${form.container_type}-${form.container_size}-2`;
-
-      const demos = [
-        {
-          id: demo1Id,
-          container_number: `CONT-${Date.now()}001`,
-          container_type: form.container_type,
-          container_size: sizeFormatted,
-          total_space_cbm: totalCbm,
-          available_space_cbm: totalCbm,
-          effective_available_cbm: totalCbm,
-          origin: origin,
-          transport_mode: form.transport,
-          status: "available",
-        },
-        {
-          id: demo2Id,
-          container_number: `CONT-${Date.now()}002`,
-          container_type: form.container_type,
-          container_size: sizeFormatted,
-          total_space_cbm: totalCbm,
-          available_space_cbm: Math.round(totalCbm * 0.6),
-          effective_available_cbm: Math.round(totalCbm * 0.6),
-          origin: origin,
-          transport_mode: form.transport,
-          status: "available",
-        },
-      ];
-
-      // Persist demos so future bookings can see updated space
-      localStorage.setItem(
-        CONTAINER_KEY,
-        JSON.stringify([...stored, ...demos])
-      );
-
-      return demos;
-    };
-
     try {
-      // 1) Try with the main supabase client (has user session for RLS)
-      let data: any[] | null = null;
-      let queryError: any = null;
+      // Simple fetch with client-side normalization fallback
+      const primary = await supabase
+        .from("containers")
+        .select("*")
+        .eq("container_type", form.container_type)
+        .eq("container_size", sizeFormatted);
 
-      try {
-          const res = await supabase
-          .from("containers")
-          .select("*")
-          .eq("container_type", form.container_type)
-          .eq("container_size", sizeFormatted);
-        data = res.data;
-        queryError = res.error;
-        console.log("Main client containers:", data?.length, "rows, error:", queryError?.message);
-      } catch (e) {
-        console.warn("Main client query threw:", e);
-      }
+      let data: any[] = primary.data || [];
+      console.log("Main client containers:", data.length, "rows", primary.error?.message);
 
-      // 2) If main client failed or returned nothing, try without filters
-      //    (in case column names differ in the DB)
-      if (queryError || !data || data.length === 0) {
-        try {
-          const res2 = await supabase
-            .from("containers")
-            .select("*");
-          const allData = res2.data || [];
-          console.log("All containers (unfiltered):", allData.length, "rows");
-          // Filter client-side to handle any column name variations
-          data = allData.filter((c: any) =>
-            (c.container_type === form.container_type || c.type === form.container_type) &&
-            (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted))
-          );
-          console.log("After client-side filter:", data.length, "rows");
-          queryError = res2.error;
-        } catch (e2) {
-          console.warn("Unfiltered query threw:", e2);
-        }
-      }
-
-      // 3) If still nothing, try fresh anon client (no auth, no RLS dependency)
-      if (queryError || !data || data.length === 0) {
-        try {
-          const { createClient } = await import("@supabase/supabase-js");
-          const anonClient = createClient(
-            import.meta.env.VITE_SUPABASE_URL!,
-            import.meta.env.VITE_SUPABASE_ANON_KEY!,
-            { auth: { persistSession: false, autoRefreshToken: false } }
-          );
-          const res3 = await anonClient
-            .from("containers")
-            .select("*");
-          const anonData = res3.data || [];
-          console.log("Anon client all containers:", anonData.length, "rows");
-          data = anonData.filter((c: any) =>
-            (c.container_type === form.container_type || c.type === form.container_type) &&
-            (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted))
-          );
-          console.log("Anon after filter:", data.length, "rows");
-        } catch (e3) {
-          console.warn("Anon client query threw:", e3);
-        }
+      if (!data || data.length === 0) {
+        const res2 = await supabase.from("containers").select("*");
+        const all = res2.data || [];
+        data = all.filter((c: any) =>
+          (c.container_type === form.container_type || c.type === form.container_type) &&
+          (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted))
+        );
+        console.log("After fallback filter:", data.length, "rows", res2.error?.message);
       }
 
       if (!data || data.length === 0) {
-        console.log("No containers found from DB, falling back to demo");
-        setAvailableContainers(getDemoContainers());
+        console.log("[containers] No DB rows");
+        setAvailableContainers([]);
         setLoadingContainers(false);
         return;
       }
 
-      // Fetch pending bookings to account for reserved (held) space
-      const containerIds = data.map((c: any) => c.id);
-      let pendingReserved: Record<string, number> = {};
-      try {
-        if (containerIds.length > 0) {
-          const { data: pendingBookings } = await supabase
-            .from("bookings")
-            .select("container_id, allocated_cbm, booking_mode")
-            .in("container_id", containerIds)
-            .eq("status", "pending_payment");
-
-          if (pendingBookings) {
-            for (const pb of pendingBookings) {
-              if (!pb.container_id) continue;
-              if (pb.booking_mode === "full") {
-                pendingReserved[pb.container_id] = Infinity;
-              } else {
-                pendingReserved[pb.container_id] = (pendingReserved[pb.container_id] || 0) + (pb.allocated_cbm || 0);
-              }
-            }
-          }
-        }
-      } catch {
-        // Ignore pending bookings errors — just show containers as-is
-      }
-
-      // Merge any localStorage space updates (from offline bookings) on top of DB data
-      const CONTAINER_KEY_MERGE = "nexport_offline_containers";
-      let localUpdatesById: Record<string, any> = {};
-      let localUpdatesByNumber: Record<string, any> = {};
-      try {
-        const localStored: any[] = JSON.parse(localStorage.getItem(CONTAINER_KEY_MERGE) || "[]");
-        for (const lc of localStored) {
-          if (lc?.id) localUpdatesById[String(lc.id)] = lc;
-          if (lc?.container_number) localUpdatesByNumber[String(lc.container_number)] = lc;
-        }
-      } catch { /* ignore parse errors */ }
-
-      // Calculate effective available space (minus pending holds), with localStorage overlay
-      let filteredContainers = data.map((c: any) => {
-        const local = localUpdatesById[String(c.id)] || (c?.container_number ? localUpdatesByNumber[String(c.container_number)] : undefined);
-        const availSpace = local
-          ? (local.available_space_cbm ?? c.available_space_cbm ?? 0)
-          : (c.available_space_cbm ?? 0);
-        const status = local?.status || c.status;
+      // Compute simple availability without extra filtering
+      const filteredContainers = data.map((c: any) => {
+        const baseTotal = c.total_space_cbm ?? 0;
+        const availSpace = c.available_space_cbm ?? baseTotal;
         return {
           ...c,
           available_space_cbm: availSpace,
-          status,
-          effective_available_cbm: Math.max(0, availSpace - (pendingReserved[c.id] || 0)),
+          effective_available_cbm: availSpace,
+          total_space_cbm: baseTotal,
         };
       });
-
-      // Filter by origin location — prefer matches, but fallback to full list if none
-      const selectedOrigin = (form.origin || "").toLowerCase();
-      if (selectedOrigin) {
-        const originCity = selectedOrigin.split(",")[0].trim().split(" ")[0]; // e.g. "cochin"
-        const originMatched = filteredContainers.filter((c: any) => {
-          const loc = (c.origin || c.current_location || "").toLowerCase();
-          return loc.includes(originCity) || selectedOrigin.includes(loc.split(",")[0].trim().split(" ")[0]);
-        });
-        // If nothing matched, keep the full list so the UI can still show options
-        filteredContainers = originMatched.length > 0 ? originMatched : filteredContainers;
-      }
-
-      if (form.booking_mode === "partial") {
-        filteredContainers = filteredContainers.filter((c: any) =>
-          c.effective_available_cbm > 0
-        );
-      } else if (form.booking_mode === "full") {
-        filteredContainers = filteredContainers.filter((c: any) =>
-          typeof c.available_space_cbm === "number" && typeof c.total_space_cbm === "number"
-            ? c.effective_available_cbm === c.total_space_cbm
-            : true
-        );
-      }
 
       setAvailableContainers(filteredContainers);
     } catch (err) {
       console.warn("Container fetch failed, using demo containers:", err);
-      setAvailableContainers(getDemoContainers());
+      setAvailableContainers([]);
     } finally {
       setLoadingContainers(false);
     }

@@ -273,6 +273,39 @@ async function fetchExporterContact(bookingId: string, fallbackEmail?: string | 
   return { booking: { ...booking, provider_name: providerName }, email, name };
 }
 
+async function callSendInvoiceEdgeFunction(params: {
+  orderId: string;
+  exporterEmail?: string | null;
+  companyName?: string | null;
+  amount?: number | null;
+  currency?: string | null;
+}) {
+  const endpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-invoice`;
+  const payload = {
+    order_id: params.orderId,
+    exporter_email: params.exporterEmail,
+    company_name: params.companyName,
+    amount: params.amount,
+    currency: params.currency,
+  };
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error ?? "Failed to send invoice");
+  }
+  return data as { success?: boolean; invoice_id?: string; pdf_url?: string };
+}
+
 export async function sendInvoiceToExporter(bookingId: string, fallbackEmail?: string | null, fallbackName?: string | null) {
   // Legacy path retained; now delegates to full invoice flow
   return processInvoiceAfterPayment(bookingId, { fallbackEmail, fallbackName });
@@ -299,6 +332,22 @@ export async function processInvoiceAfterPayment(
 
   if (paymentError) {
     console.warn("Invoice: failed to fetch payment row", paymentError);
+  }
+
+  try {
+    const edgeResult = await callSendInvoiceEdgeFunction({
+      orderId: bookingId,
+      exporterEmail: contact.email ?? opts.fallbackEmail,
+      companyName: contact.name,
+      amount: paymentRow?.amount ?? contact.booking.price,
+      currency: paymentRow?.currency ?? "INR",
+    });
+
+    if (edgeResult?.pdf_url) {
+      return { url: edgeResult.pdf_url, invoice_id: edgeResult.invoice_id };
+    }
+  } catch (err) {
+    console.warn("Edge send-invoice failed, falling back to client-side PDF", err);
   }
 
   // 2) build invoice PDF
