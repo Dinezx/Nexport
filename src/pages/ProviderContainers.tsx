@@ -354,10 +354,10 @@ export default function ProviderContainers() {
                   <b>Transport:</b> {c.transport_mode}
                 </div>
                 <div className="text-sm">
-                  <b>Total Space:</b> {c.total_space_cbm ? c.total_space_cbm + ' CBM' : '--'}
+                  <b>Total Space:</b> {typeof c.total_space_cbm === "number" ? `${c.total_space_cbm} CBM` : "--"}
                 </div>
                 <div className="text-sm">
-                  <b>Available Space:</b> {c.available_space_cbm ? c.available_space_cbm + ' CBM' : '--'}
+                  <b>Available Space:</b> {typeof c.available_space_cbm === "number" ? `${c.available_space_cbm} CBM` : "--"}
                 </div>
                 <div className="text-sm">
                   <b>Utilization:</b> {

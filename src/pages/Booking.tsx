@@ -1265,14 +1265,21 @@ export default function Booking() {
 
     const sizeFormatted = `${form.container_size}ft`;
     const normalizeSize = (v?: string | null) => (v || "").replace(/\s+/g, "").toLowerCase();
+    const originText = (form.origin || "").split(",")[0].trim().toLowerCase();
 
     try {
       // Simple fetch with client-side normalization fallback
-      const primary = await supabase
+      let primaryQuery = supabase
         .from("containers")
         .select("*")
         .eq("container_type", form.container_type)
         .eq("container_size", sizeFormatted);
+
+      if (originText) {
+        primaryQuery = primaryQuery.ilike("origin", `%${originText}%`);
+      }
+
+      const primary = await primaryQuery;
 
       let data: any[] = primary.data || [];
       console.log("Main client containers:", data.length, "rows", primary.error?.message);
@@ -1282,7 +1289,8 @@ export default function Booking() {
         const all = res2.data || [];
         data = all.filter((c: any) =>
           (c.container_type === form.container_type || c.type === form.container_type) &&
-          (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted))
+          (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted)) &&
+          (!originText || (c.origin || "").toLowerCase().includes(originText))
         );
         console.log("After fallback filter:", data.length, "rows", res2.error?.message);
       }
