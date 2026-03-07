@@ -301,9 +301,10 @@ async function callSendInvoiceEdgeFunction(params: {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.error ?? "Failed to send invoice");
+    console.warn("Edge send-invoice returned non-OK", res.status, data);
+    return null;
   }
-  return data as { success?: boolean; invoice_id?: string; pdf_url?: string };
+  return data as { success?: boolean; invoice_id?: string; pdf_url?: string; email_error?: string | null };
 }
 
 export async function sendInvoiceToExporter(bookingId: string, fallbackEmail?: string | null, fallbackName?: string | null) {
