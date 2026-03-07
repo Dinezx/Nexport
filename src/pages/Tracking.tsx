@@ -75,7 +75,10 @@ export default function Tracking() {
   ];
 
   const orderedEvents = events
-    .filter((e, i, arr) => arr.findIndex((x) => x.title === e.title) === i)
+    .filter((e, i, arr) => {
+      const norm = (v: string) => v.trim().toLowerCase();
+      return arr.findIndex((x) => norm(x.title) === norm(e.title)) === i;
+    })
     .map((e, idx) => ({ e, idx }))
     .sort((a, b) => {
       const aDone = a.e.status === "completed";

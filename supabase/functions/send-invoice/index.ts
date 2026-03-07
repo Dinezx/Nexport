@@ -32,6 +32,7 @@ Deno.serve(async (req) => {
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
         const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
         const resendApiKey = Deno.env.get("RESEND_API_KEY");
+        const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "onboarding@resend.dev";
 
         if (!supabaseUrl || !serviceRoleKey) {
             return jsonResponse({ error: "Supabase environment is not configured" }, 500);
@@ -128,18 +129,25 @@ Deno.serve(async (req) => {
             throw new Error(`Invoice insert failed: ${insertErr.message}`);
         }
 
-        await sendInvoiceEmail({
-            resendApiKey,
-            exporterEmail,
-            companyName,
-            orderId,
-            pdfUrl,
-            amount,
-            currency,
-            invoiceDate,
-        });
+        let emailError: string | null = null;
+        try {
+            await sendInvoiceEmail({
+                resendApiKey,
+                resendFrom,
+                exporterEmail,
+                companyName,
+                orderId,
+                pdfUrl,
+                amount,
+                currency,
+                invoiceDate,
+            });
+        } catch (err) {
+            console.error("Email send failed", err);
+            emailError = err?.message ?? "Email failed";
+        }
 
-        return jsonResponse({ success: true, invoice_id: invoiceId, pdf_url: pdfUrl }, 200);
+        return jsonResponse({ success: true, invoice_id: invoiceId, pdf_url: pdfUrl, email_error: emailError }, emailError ? 207 : 200);
     } catch (error) {
         console.error("send-invoice error", error);
         return jsonResponse({ error: error?.message ?? "Unexpected error" }, 500);
@@ -187,6 +195,7 @@ async function generateInvoicePdf(params: {
 
 async function sendInvoiceEmail(params: {
     resendApiKey: string;
+    resendFrom: string;
     exporterEmail: string;
     companyName?: string;
     orderId: string;
@@ -215,7 +224,7 @@ async function sendInvoiceEmail(params: {
             "Content-Type": "application/json",
         },
         body: JSON.stringify({
-            from: "invoices@nexport.com",
+            from: params.resendFrom,
             to: params.exporterEmail,
             subject: "Your Nexport Invoice",
             html,
