@@ -51,11 +51,6 @@ Deno.serve(async (req) => {
             .eq("id", orderId)
             .maybeSingle();
 
-        if (bookingErr) {
-            console.error("Booking fetch error:", bookingErr);
-        }
-        console.log("Booking data for", orderId, ":", JSON.stringify(booking));
-
         const { data: payment } = await supabase
             .from("payments")
             .select("amount, currency, transaction_ref, payment_method, created_at")
