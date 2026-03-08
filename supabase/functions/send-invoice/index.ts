@@ -45,11 +45,16 @@ Deno.serve(async (req) => {
             auth: { autoRefreshToken: false, persistSession: false },
         });
 
-        const { data: booking } = await supabase
+        const { data: booking, error: bookingErr } = await supabase
             .from("bookings")
-            .select("id, exporter_id, price, currency, origin, destination, transport_mode, cargo_type, cargo_weight, container_number, allocated_cbm, booking_date, status")
+            .select("id, exporter_id, price, origin, destination, transport_mode, cargo_type, cargo_weight, container_number, allocated_cbm, booking_date, status")
             .eq("id", orderId)
             .maybeSingle();
+
+        if (bookingErr) {
+            console.error("Booking fetch error:", bookingErr);
+        }
+        console.log("Booking data for", orderId, ":", JSON.stringify(booking));
 
         const { data: payment } = await supabase
             .from("payments")
@@ -61,7 +66,6 @@ Deno.serve(async (req) => {
 
         let amount = parseAmount(amountInput ?? payment?.amount ?? booking?.price ?? 0);
         if (payment?.currency && !body.currency) currency = payment.currency;
-        if (booking?.currency && !body.currency && !payment?.currency) currency = booking.currency;
 
         if (booking?.exporter_id) {
             const { data: profile } = await supabase
