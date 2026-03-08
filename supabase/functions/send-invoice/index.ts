@@ -321,7 +321,7 @@ async function sendInvoiceEmail(params: {
     paymentDate: string | null;
 }) {
     const amtStr = params.currency === "INR"
-        ? `₹ ${params.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+        ? `INR ${params.amount.toFixed(2)}`
         : `${params.amount.toFixed(2)} ${params.currency}`;
 
     const greeting = params.exporterName || params.companyName || "Exporter";
@@ -368,7 +368,7 @@ async function sendInvoiceEmail(params: {
           <tr><td style="padding: 8px; border: 1px solid #e0e0e0; color: #666;">Payment Method</td>
               <td style="padding: 8px; border: 1px solid #e0e0e0;">${params.paymentMethod}</td></tr>
           ${params.paymentDate ? `<tr><td style="padding: 8px; border: 1px solid #e0e0e0; color: #666;">Payment Date</td>
-              <td style="padding: 8px; border: 1px solid #e0e0e0;">${new Date(params.paymentDate).toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" })}</td></tr>` : ""}
+              <td style="padding: 8px; border: 1px solid #e0e0e0;">${params.paymentDate.slice(0, 10)}</td></tr>` : ""}
           <tr style="background: #eef0ff;">
             <td style="padding: 12px; border: 1px solid #e0e0e0; font-weight: bold; font-size: 15px;">Total Amount</td>
             <td style="padding: 12px; border: 1px solid #e0e0e0; font-weight: bold; font-size: 16px; color: #1e56d0;">${amtStr}</td>
