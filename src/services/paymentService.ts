@@ -322,6 +322,17 @@ export async function processInvoiceAfterPayment(
     return null;
   }
 
+  // If we still don't have an email, try current auth user as fallback
+  let fallbackEmail = contact.email ?? opts.fallbackEmail ?? null;
+  if (!fallbackEmail) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      fallbackEmail = user?.email ?? null;
+    } catch (err) {
+      console.warn("Auth user lookup for invoice email failed", err);
+    }
+  }
+
   // 1) fetch payment data
   const { data: paymentRow, error: paymentError } = await supabase
     .from("payments")
@@ -338,7 +349,7 @@ export async function processInvoiceAfterPayment(
   try {
     const edgeResult = await callSendInvoiceEdgeFunction({
       orderId: bookingId,
-      exporterEmail: contact.email ?? opts.fallbackEmail,
+      exporterEmail: contact.email ?? fallbackEmail,
       companyName: contact.name,
       amount: paymentRow?.amount ?? contact.booking.price,
       currency: paymentRow?.currency ?? "INR",
