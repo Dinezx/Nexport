@@ -13,9 +13,17 @@ export async function sendEmail(payload: EmailPayload) {
         return null;
     }
 
+    // Supabase Edge Functions typically require apikey/Authorization headers even when verify_jwt is false.
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (anonKey) {
+        headers["apikey"] = anonKey;
+        headers["Authorization"] = `Bearer ${anonKey}`;
+    }
+
     const res = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(payload),
     });
 

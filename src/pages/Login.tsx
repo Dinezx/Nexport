@@ -61,8 +61,8 @@ export default function Login() {
         // Check if a profiles row exists; create one if missing
         const { data: profile } = await supabase
           .from("profiles")
-          .select("id, role")
-          .eq("id", data.user.id)
+          .select("user_id, role")
+          .eq("user_id", data.user.id)
           .single();
 
         const effectiveRole = profile?.role ?? role;

@@ -254,7 +254,7 @@ async function fetchExporterContact(bookingId: string, fallbackEmail?: string | 
       const { data: providerProfile } = await supabase
         .from("profiles")
         .select("full_name")
-        .eq("id", container.provider_id)
+        .eq("user_id", container.provider_id)
         .maybeSingle();
       if (providerProfile?.full_name) providerName = providerProfile.full_name;
     }
@@ -264,7 +264,7 @@ async function fetchExporterContact(bookingId: string, fallbackEmail?: string | 
     const { data: profile } = await supabase
       .from("profiles")
       .select("email, full_name")
-      .eq("id", booking.exporter_id)
+      .eq("user_id", booking.exporter_id)
       .maybeSingle();
     if (profile?.email) email = profile.email;
     if (profile?.full_name) name = profile.full_name;

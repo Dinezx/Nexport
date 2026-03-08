@@ -41,8 +41,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (session?.user) {
             const { data: profile } = await supabase
               .from("profiles")
-              .select("id, role")
-              .eq("id", session.user.id)
+              .select("user_id, role")
+              .eq("user_id", session.user.id)
               .single();
 
             if (profile) {
