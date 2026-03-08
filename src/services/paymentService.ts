@@ -346,6 +346,7 @@ export async function processInvoiceAfterPayment(
     console.warn("Invoice: failed to fetch payment row", paymentError);
   }
 
+  // Send invoice via Edge Function (generates PDF, sends email with attachment)
   try {
     const edgeResult = await callSendInvoiceEdgeFunction({
       orderId: bookingId,
@@ -355,73 +356,15 @@ export async function processInvoiceAfterPayment(
       currency: paymentRow?.currency ?? "INR",
     });
 
-    if (edgeResult?.pdf_url) {
-      return { url: edgeResult.pdf_url, invoice_id: edgeResult.invoice_id };
+    if (edgeResult?.success) {
+      return { url: edgeResult.pdf_url ?? null, invoice_id: edgeResult.invoice_id };
     }
+    console.warn("Edge send-invoice returned non-success", edgeResult);
   } catch (err) {
-    console.warn("Edge send-invoice failed, falling back to client-side PDF", err);
+    console.warn("Edge send-invoice call failed", err);
   }
 
-  // 2) build invoice PDF
-  let pdfBytes: Uint8Array;
-  try {
-    pdfBytes = await generateInvoicePDF(
-      {
-        id: contact.booking.id,
-        origin: contact.booking.origin,
-        destination: contact.booking.destination,
-        container_type: contact.booking.container_type,
-        container_size: contact.booking.container_size,
-        booking_mode: contact.booking.booking_mode,
-        allocated_cbm: contact.booking.allocated_cbm,
-        price: contact.booking.price,
-        exporter_name: contact.name,
-        provider_name: contact.booking.provider_name,
-      },
-      {
-        transaction_ref: paymentRow?.transaction_ref,
-        amount: paymentRow?.amount ?? contact.booking.price,
-        currency: paymentRow?.currency ?? "INR",
-        created_at: paymentRow?.created_at ?? new Date().toISOString(),
-      }
-    );
-  } catch (err) {
-    console.error("Invoice PDF generation failed", err);
-    return null;
-  }
-
-  // 3) upload to storage
-  let invoiceUrl: string | null = null;
-  try {
-    invoiceUrl = await uploadInvoiceToStorage(pdfBytes, bookingId);
-  } catch (err) {
-    console.error("Invoice upload failed", err);
-    return null;
-  }
-
-  if (!invoiceUrl) {
-    console.warn("Invoice upload returned empty URL", { bookingId });
-    return null;
-  }
-
-  // 4) persist URL
-  try {
-    const { error: updateError } = await supabase.from("bookings").update({ invoice_url: invoiceUrl }).eq("id", bookingId);
-    if (updateError) throw updateError;
-  } catch (err) {
-    console.error("Failed to store invoice URL", err);
-  }
-
-  // 5) email exporter
-  try {
-    if (contact.email) {
-      await sendInvoiceEmail(contact.email, invoiceUrl, bookingId);
-    }
-  } catch (err) {
-    console.warn("Invoice email send failed", err);
-  }
-
-  return { url: invoiceUrl };
+  return null;
 }
 
 export async function ensureConversation(bookingId: string) {

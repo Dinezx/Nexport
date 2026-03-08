@@ -1452,6 +1452,12 @@ export default function Booking() {
     let booking: any = null;
 
     if (online) {
+      // Ensure profile exists (bookings.exporter_id references profiles.id)
+      await supabase.from("profiles").upsert(
+        { id: userId, name: "", role: "exporter" },
+        { onConflict: "id", ignoreDuplicates: true }
+      );
+
       const { data, error } = await supabase
         .from("bookings")
         .insert(bookingPayload)
