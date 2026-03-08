@@ -32,7 +32,6 @@ Deno.serve(async (req) => {
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
         const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
         const resendApiKey = Deno.env.get("RESEND_API_KEY");
-        const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "onboarding@resend.dev";
 
         if (!supabaseUrl || !serviceRoleKey) {
             return jsonResponse({ error: "Supabase environment is not configured" }, 500);
@@ -133,7 +132,6 @@ Deno.serve(async (req) => {
         try {
             await sendInvoiceEmail({
                 resendApiKey,
-                resendFrom,
                 exporterEmail,
                 companyName,
                 orderId,
@@ -195,7 +193,6 @@ async function generateInvoicePdf(params: {
 
 async function sendInvoiceEmail(params: {
     resendApiKey: string;
-    resendFrom: string;
     exporterEmail: string;
     companyName?: string;
     orderId: string;
@@ -224,7 +221,7 @@ async function sendInvoiceEmail(params: {
             "Content-Type": "application/json",
         },
         body: JSON.stringify({
-            from: params.resendFrom,
+            from: "Nexport <onboarding@resend.dev>",
             to: params.exporterEmail,
             subject: "Your Nexport Invoice",
             html,

@@ -19,7 +19,6 @@ Deno.serve(async (req) => {
         }
 
         const resendApiKey = Deno.env.get("RESEND_API_KEY");
-        const resendFrom = Deno.env.get("RESEND_FROM_EMAIL") ?? "onboarding@resend.dev";
 
         if (!resendApiKey) {
             return json({ error: "RESEND_API_KEY not configured" }, 500);
@@ -31,7 +30,13 @@ Deno.serve(async (req) => {
                 Authorization: `Bearer ${resendApiKey}`,
                 "Content-Type": "application/json",
             },
-            body: JSON.stringify({ from: resendFrom, to, subject, text, html }),
+            body: JSON.stringify({
+                from: "Nexport <onboarding@resend.dev>",
+                to,
+                subject,
+                text,
+                html,
+            }),
         });
 
         if (!res.ok) {

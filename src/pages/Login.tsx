@@ -61,24 +61,29 @@ export default function Login() {
         // Check if a profiles row exists; create one if missing
         const { data: profile } = await supabase
           .from("profiles")
-          .select("user_id, role")
-          .eq("user_id", data.user.id)
-          .single();
-
-        const effectiveRole = profile?.role ?? role;
+          .select("id, role")
+          .eq("id", data.user.id)
+          .maybeSingle();
 
         if (!profile) {
           await supabase.from("profiles").insert({
             id: data.user.id,
-            email: data.user.email,
+            name: data.user.user_metadata?.name || "",
             role,
+            company: data.user.user_metadata?.company || "",
           });
+        } else if (profile.role !== role) {
+          // Update role to match the one selected on the login page
+          await supabase
+            .from("profiles")
+            .update({ role })
+            .eq("id", data.user.id);
         }
 
         await new Promise((r) => setTimeout(r, 300));
 
         navigate(
-          effectiveRole === "provider"
+          role === "provider"
             ? "/provider/dashboard"
             : "/exporter/dashboard"
         );

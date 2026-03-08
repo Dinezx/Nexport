@@ -251,8 +251,11 @@ export default function ExporterBookings() {
                   <span className="font-mono text-sm">
                     BK-{b.id.slice(0, 8).toUpperCase()}
                   </span>
-                  <Badge variant="secondary" className="capitalize">
-                    {b.status}
+                  <Badge
+                    variant="secondary"
+                    className={`capitalize ${b.status === "payment_completed" || b.status === "paid" ? "bg-green-100 text-green-700" : ""}`}
+                  >
+                    {b.status === "payment_completed" ? "Paid" : b.status}
                   </Badge>
                 </CardTitle>
               </CardHeader>

@@ -346,7 +346,11 @@ export default function Tracking() {
                 {booking.origin} → {booking.destination}
               </div>
               <p>Transport: {booking.transport_mode.toUpperCase()}</p>
-              <p>Status: <b>{booking.status}</b></p>
+              <p>
+                Status: <b className={booking.status === "payment_completed" ? "text-green-600" : undefined}>
+                  {booking.status === "payment_completed" ? "paid" : booking.status}
+                </b>
+              </p>
               {booking.eta_days && (
                 <p>
                   <b>AI ETA:</b> {booking.eta_days} days

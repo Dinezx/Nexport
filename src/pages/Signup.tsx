@@ -54,6 +54,16 @@ export default function Signup() {
         return;
       }
 
+      // Create profile row immediately after signup
+      if (data.user) {
+        await supabase.from("profiles").upsert({
+          id: data.user.id,
+          name,
+          role,
+          company,
+        }, { onConflict: "id" });
+      }
+
       setLoading(false);
       navigate("/login");
       return;

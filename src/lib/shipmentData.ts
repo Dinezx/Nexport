@@ -310,7 +310,20 @@ export const HISTORICAL_ROUTES: HistoricalRoute[] = [
     { origin: "Delhi Indira Gandhi International Airport, India", destination: "Shanghai Pudong International Airport, China", transport: "air", avgDays: 3, minDays: 2, maxDays: 4, sampleSize: 600 },
     { origin: "Mumbai Chhatrapati Shivaji Maharaj International Airport, India", destination: "Dubai International Airport, UAE", transport: "air", avgDays: 2, minDays: 1, maxDays: 3, sampleSize: 1300 },
     { origin: "Bengaluru Kempegowda International Airport, India", destination: "Singapore Changi Airport, Singapore", transport: "air", avgDays: 2, minDays: 1, maxDays: 3, sampleSize: 680 },
-    { origin: "Singapore Changi Airport, Singapore", destination: "Hong Kong International Airport, Hong Kong", transport: "air", avgDays: 2, minDays: 1, maxDays: 2, sampleSize: 1500 },
+
+    // ─── Domestic Air Routes (India) ───
+    { origin: "Hyderabad Rajiv Gandhi International Airport, India", destination: "Mumbai Chhatrapati Shivaji Maharaj International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 1800 },
+    { origin: "Hyderabad Rajiv Gandhi International Airport, India", destination: "Delhi Indira Gandhi International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 1500 },
+    { origin: "Hyderabad Rajiv Gandhi International Airport, India", destination: "Chennai International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 1600 },
+    { origin: "Hyderabad Rajiv Gandhi International Airport, India", destination: "Bengaluru Kempegowda International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 1, sampleSize: 1900 },
+    { origin: "Mumbai Chhatrapati Shivaji Maharaj International Airport, India", destination: "Delhi Indira Gandhi International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 2500 },
+    { origin: "Mumbai Chhatrapati Shivaji Maharaj International Airport, India", destination: "Chennai International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 1400 },
+    { origin: "Mumbai Chhatrapati Shivaji Maharaj International Airport, India", destination: "Bengaluru Kempegowda International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 1600 },
+    { origin: "Delhi Indira Gandhi International Airport, India", destination: "Chennai International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 1300 },
+    { origin: "Delhi Indira Gandhi International Airport, India", destination: "Kolkata Netaji Subhas Chandra Bose International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 2, sampleSize: 1400 },
+    { origin: "Chennai International Airport, India", destination: "Bengaluru Kempegowda International Airport, India", transport: "air", avgDays: 1, minDays: 1, maxDays: 1, sampleSize: 2000 },
+
+    // ─── International Air Routes ───
     { origin: "Singapore Changi Airport, Singapore", destination: "Tokyo Narita International Airport, Japan", transport: "air", avgDays: 2, minDays: 1, maxDays: 3, sampleSize: 1200 },
     { origin: "Dubai International Airport, UAE", destination: "Nairobi Jomo Kenyatta International Airport, Kenya", transport: "air", avgDays: 2, minDays: 1, maxDays: 3, sampleSize: 500 },
     { origin: "Dubai International Airport, UAE", destination: "Johannesburg O.R. Tambo International Airport, South Africa", transport: "air", avgDays: 3, minDays: 2, maxDays: 4, sampleSize: 450 },

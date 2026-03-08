@@ -15,21 +15,43 @@ type BookingMode = "full" | "partial";
 
 // ─── Find closest known location for a given name ───────────────────────────
 
-function findLocation(name: string): LocationCoord | null {
+function findLocation(name: string, preferredType?: "port" | "airport" | "icd"): LocationCoord | null {
   if (LOCATION_COORDS[name]) return LOCATION_COORDS[name];
 
-  // Fuzzy match: try substring matching
   const lower = name.toLowerCase();
+  const candidates: { key: string; coord: LocationCoord; score: number }[] = [];
+
   for (const [key, coord] of Object.entries(LOCATION_COORDS)) {
-    if (key.toLowerCase().includes(lower) || lower.includes(key.toLowerCase().split(",")[0].split(" ")[0])) {
-      return coord;
+    const kLower = key.toLowerCase();
+    if (kLower.includes(lower) || lower.includes(kLower.split(",")[0].split(" ")[0])) {
+      let score = 1;
+      // Prefer matching type (airport for air, port for sea)
+      if (preferredType && coord.type === preferredType) score += 10;
+      // Prefer more specific name overlap
+      if (kLower.includes(lower.split(",")[0].trim())) score += 5;
+      candidates.push({ key, coord, score });
     }
+  }
+
+  if (candidates.length) {
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0].coord;
   }
 
   // Try matching city name
   const city = lower.split(",")[0].trim().split(" ")[0];
+  const cityMatches: { key: string; coord: LocationCoord; score: number }[] = [];
   for (const [key, coord] of Object.entries(LOCATION_COORDS)) {
-    if (key.toLowerCase().includes(city)) return coord;
+    if (key.toLowerCase().includes(city)) {
+      let score = 1;
+      if (preferredType && coord.type === preferredType) score += 10;
+      cityMatches.push({ key, coord, score });
+    }
+  }
+
+  if (cityMatches.length) {
+    cityMatches.sort((a, b) => b.score - a.score);
+    return cityMatches[0].coord;
   }
 
   return null;
@@ -115,24 +137,31 @@ export const predictEtaAndRisk = (params: {
   // ── Try historical data first ──
   const historical = findHistoricalRoute(params.origin, params.destination, params.transport);
 
-  // ── Location metadata ──
-  const originLoc = findLocation(params.origin);
-  const destLoc = findLocation(params.destination);
+  // ── Location metadata (transport-aware matching) ──
+  const preferredType = params.transport === "air" ? "airport" : params.transport === "sea" ? "port" : undefined;
+  const originLoc = findLocation(params.origin, preferredType);
+  const destLoc = findLocation(params.destination, preferredType);
   const originCongestion = originLoc?.congestionIndex ?? 5;
   const destCongestion = destLoc?.congestionIndex ?? 5;
   const originType = originLoc?.type ?? "port";
   const destType = destLoc?.type ?? "port";
   const originCountry = originLoc?.country ?? getCountry(params.origin);
   const destCountry = destLoc?.country ?? getCountry(params.destination);
+  const isDomestic = originCountry === destCountry;
 
-  // ── Port/terminal handling ──
-  const originHandling = getPortHandlingDays(originCongestion, originType);
-  const destHandling = getPortHandlingDays(destCongestion, destType);
+  // ── Port/terminal handling (reduced for domestic) ──
+  let originHandling = getPortHandlingDays(originCongestion, originType);
+  let destHandling = getPortHandlingDays(destCongestion, destType);
+  if (isDomestic) {
+    // Domestic routes have simpler handling — no international procedures
+    originHandling *= 0.4;
+    destHandling *= 0.4;
+  }
 
-  // ── Customs clearance ──
-  const customsExport = CUSTOMS_DAYS[originCountry]?.export ?? 2.5;
-  const customsImport = CUSTOMS_DAYS[destCountry]?.import ?? 3.5;
-  const totalCustoms = customsExport + customsImport;
+  // ── Customs clearance (zero for domestic routes) ──
+  const totalCustoms = isDomestic
+    ? 0
+    : (CUSTOMS_DAYS[originCountry]?.export ?? 2.5) + (CUSTOMS_DAYS[destCountry]?.import ?? 3.5);
 
   // ── Weather factor ──
   const weatherFactor = getWeatherDelayFactor(currentMonth, params.transport);
