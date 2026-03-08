@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
 
         const { data: booking, error: bookingErr } = await supabase
             .from("bookings")
-            .select("id, exporter_id, price, origin, destination, transport_mode, cargo_type, cargo_weight, container_number, allocated_cbm, booking_date, status")
+            .select("id, exporter_id, price, origin, destination, transport_mode, cargo_type, cargo_weight, container_id, container_number, allocated_cbm, booking_date, status")
             .eq("id", orderId)
             .maybeSingle();
 
@@ -174,6 +174,28 @@ Deno.serve(async (req) => {
         } catch (err) {
             console.error("Email send failed", err);
             emailError = err?.message ?? "Email failed";
+        }
+
+        // Update container available space (service_role bypasses RLS)
+        if (booking?.container_id && booking?.allocated_cbm) {
+            try {
+                const { data: container } = await supabase
+                    .from("containers")
+                    .select("id, available_space_cbm, total_space_cbm")
+                    .eq("id", booking.container_id)
+                    .maybeSingle();
+
+                if (container) {
+                    const currentAvail = container.available_space_cbm ?? container.total_space_cbm ?? 0;
+                    const newAvail = Math.max(0, currentAvail - (booking.allocated_cbm ?? 0));
+                    await supabase
+                        .from("containers")
+                        .update({ available_space_cbm: newAvail, status: newAvail <= 0 ? "full" : "active" })
+                        .eq("id", container.id);
+                }
+            } catch (capErr) {
+                console.warn("Container capacity update failed (non-fatal):", capErr);
+            }
         }
 
         return jsonResponse({ success: true, invoice_id: invoiceId, pdf_url: pdfUrl, email_error: emailError }, emailError ? 207 : 200);

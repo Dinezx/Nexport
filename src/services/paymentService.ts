@@ -146,7 +146,7 @@ export async function createTrackingEvents(bookingId: string) {
 
 /* ---------- Capacity + escrow helpers ---------- */
 
-async function updateContainerCapacity(bookingId: string) {
+export async function updateContainerCapacity(bookingId: string) {
   const { data: booking, error: bookingError } = await supabase
     .from("bookings")
     .select("id, container_id, allocated_cbm, booking_mode, exporter_id, container_number")
@@ -164,12 +164,11 @@ async function updateContainerCapacity(bookingId: string) {
 
   if (!container) return null;
 
-  const allocated = booking.booking_mode === "partial"
-    ? Math.max(0, booking.allocated_cbm || 0)
-    : (container.total_space_cbm || 0);
+  // Use allocated_cbm directly — it's set for both full and partial bookings
+  const allocated = Math.max(0, booking.allocated_cbm || 0);
 
   const newAvailable = Math.max(0, (container.available_space_cbm ?? container.total_space_cbm ?? 0) - allocated);
-  const newStatus = newAvailable <= 0 ? "full" : (container.status as any) ?? "available";
+  const newStatus = newAvailable <= 0 ? "full" : "active";
 
   const { error: updateError } = await supabase
     .from("containers")

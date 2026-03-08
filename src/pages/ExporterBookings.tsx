@@ -22,6 +22,7 @@ import {
   ensureConversation,
   releaseBookingHold,
   processInvoiceAfterPayment,
+  updateContainerCapacity,
 } from "@/services/paymentService";
 
 /* ---------------- Types ---------------- */
@@ -133,6 +134,13 @@ export default function ExporterBookings() {
 
       // 3️⃣ Mark booking as paid
       await markBookingPaid(bookingId);
+
+      // 3.5️⃣ Update container available space
+      try {
+        await updateContainerCapacity(bookingId);
+      } catch (err) {
+        console.error("Container capacity update failed", err);
+      }
 
       // 4️⃣ Create tracking events
       await createTrackingEvents(bookingId);

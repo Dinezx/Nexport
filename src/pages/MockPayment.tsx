@@ -18,6 +18,7 @@ import {
   createTrackingEvents,
   ensureConversation,
   processInvoiceAfterPayment,
+  updateContainerCapacity,
   // internal helpers
 } from "@/services/paymentService";
 import { updateShipmentStatus } from "@/services/shipmentService";
@@ -148,6 +149,11 @@ export default function MockPayment() {
             transaction_ref: paymentId,
           });
           await markBookingPaid(bookingId);
+          try {
+            await updateContainerCapacity(bookingId);
+          } catch (err) {
+            console.error("Container capacity update failed", err);
+          }
           await createTrackingEvents(bookingId);
           try {
             const invoiceResult = await processInvoiceAfterPayment(bookingId, { fallbackEmail: userEmail });
