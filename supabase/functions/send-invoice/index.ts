@@ -216,6 +216,9 @@ async function generateInvoicePdf(params: {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const invoiceId = crypto.randomUUID();
 
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const fmtDate = (d: Date) => `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+
     const blue = rgb(0.12, 0.34, 0.82);
     const black = rgb(0, 0, 0);
     const gray = rgb(0.4, 0.4, 0.4);
@@ -238,7 +241,7 @@ async function generateInvoicePdf(params: {
 
     // Invoice meta
     drawLine("Invoice ID:", invoiceId);
-    drawLine("Invoice Date:", params.invoiceDate.toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" }));
+    drawLine("Invoice Date:", fmtDate(params.invoiceDate));
     drawLine("Booking ID:", `BK-${params.orderId.slice(0, 8).toUpperCase()}`);
     y -= 10;
 
@@ -269,7 +272,7 @@ async function generateInvoicePdf(params: {
     drawLine("Transaction Ref:", params.transactionRef);
     drawLine("Payment Method:", params.paymentMethod);
     if (params.paymentDate) {
-        drawLine("Payment Date:", new Date(params.paymentDate).toLocaleDateString("en-IN", { year: "numeric", month: "long", day: "numeric" }));
+        drawLine("Payment Date:", fmtDate(new Date(params.paymentDate)));
     }
     y -= 10;
 
@@ -277,7 +280,7 @@ async function generateInvoicePdf(params: {
     page.drawRectangle({ x: 40, y: y - 5, width: 515, height: 35, color: rgb(0.95, 0.95, 1) });
     page.drawText("TOTAL AMOUNT:", { x: 50, y: y + 5, size: 13, font: fontBold, color: blue });
     const amtStr = params.currency === "INR"
-        ? `₹ ${params.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+        ? `Rs. ${params.amount.toFixed(2)}`
         : `${params.amount.toFixed(2)} ${params.currency}`;
     page.drawText(amtStr, { x: 350, y: y + 5, size: 14, font: fontBold, color: black });
     y -= 50;

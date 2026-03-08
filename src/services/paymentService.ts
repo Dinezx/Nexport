@@ -2,9 +2,8 @@ import { supabase } from "@/lib/supabase";
 import { updateShipmentStatus } from "@/services/shipmentService";
 import { addTrackingEvent } from "@/services/trackingService";
 import { createNotification } from "@/services/notificationService";
-import { uploadInvoice, generateInvoicePDF, uploadInvoiceToStorage } from "@/services/invoiceService";
+import { uploadInvoice } from "@/services/invoiceService";
 import { optimizeContainerFill } from "@/services/containerAllocator";
-import { sendEmail, sendInvoiceEmail } from "@/services/emailService";
 
 /* ---------- Razorpay type declarations ---------- */
 declare global {
