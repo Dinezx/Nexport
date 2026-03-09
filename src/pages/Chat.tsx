@@ -30,6 +30,7 @@ import {
   subscribeToMessages,
   insertMessage,
   sendAiMessage,
+  saveOfflineMessage,
   Message,
   Conversation,
   ConversationWithDetails,
@@ -118,8 +119,9 @@ export default function Chat() {
         // Load messages for current mode
         const key = getStorageKey(conversation.id, chatMode);
         const stored = localStorage.getItem(`nexport_chat_${key}`);
-        if (stored) {
-          setMessages(JSON.parse(stored));
+        const parsed = stored ? JSON.parse(stored) : null;
+        if (parsed && parsed.length > 0) {
+          setMessages(parsed);
         } else {
           const msgData = await fetchConversationMessages(conversation.id);
           if (chatMode === "ai") {
@@ -138,9 +140,9 @@ export default function Chat() {
     loadMessages();
   }, [conversation?.id, user, chatMode]);
 
-  // Save messages whenever they change
+  // Save messages whenever they change (skip empty to avoid cache corruption)
   useEffect(() => {
-    if (!conversation) return;
+    if (!conversation || messages.length === 0) return;
     const key = getStorageKey(conversation.id, chatMode);
     localStorage.setItem(`nexport_chat_${key}`, JSON.stringify(messages));
   }, [messages, conversation?.id, chatMode]);
@@ -257,8 +259,32 @@ export default function Chat() {
         }
         setAiThinking(false);
       } else {
-        // Provider mode — no AI auto-response; rely on real provider messages
-        setProviderTyping(false);
+        // Provider mode — generate simulated response for offline conversations
+        const isOfflineConv = conversation.id.startsWith("conv-offline-");
+        if (isOfflineConv) {
+          setProviderTyping(true);
+          try {
+            // Small delay to simulate provider typing
+            await new Promise((r) => setTimeout(r, 800 + Math.random() * 1200));
+            const providerResult = await sendAiMessage({
+              message: messageText,
+              bookingId: conversation.booking_id,
+              conversationId: `provider-${conversation.id}`,
+            });
+            if (providerResult?.offlineMessage) {
+              const providerMsg = { ...providerResult.offlineMessage, sender_role: "provider" as SenderRole };
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === providerMsg.id)) return prev;
+                return [...prev, providerMsg];
+              });
+              // Also save to the actual conversation's offline messages
+              saveOfflineMessage(conversation.id, providerMsg);
+            }
+          } catch (err) {
+            console.error("Provider simulation error:", err);
+          }
+          setProviderTyping(false);
+        }
       }
     } catch (err) {
       console.error("Send error:", err);

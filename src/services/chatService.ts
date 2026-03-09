@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
-import { getOfflineBookings } from "@/services/bookingService";
+import { getOfflineBookings, saveOfflineBooking } from "@/services/bookingService";
 import { predictEtaAndRisk } from "@/lib/prediction";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
@@ -57,7 +57,7 @@ function getOfflineMessages(conversationId: string): Message[] {
   } catch { return []; }
 }
 
-function saveOfflineMessage(conversationId: string, msg: Message) {
+export function saveOfflineMessage(conversationId: string, msg: Message) {
   try {
     const all: Record<string, Message[]> = JSON.parse(
       localStorage.getItem(OFFLINE_MESSAGES_KEY) || "{}"
@@ -157,55 +157,133 @@ export async function fetchAllConversations(userId: string): Promise<Conversatio
     });
   }
 
+  // Try loading from conversations table first
   const { data, error } = await supabase
     .from("conversations")
     .select("*")
     .or(`exporter_id.eq.${userId},provider_id.eq.${userId}`)
     .order("created_at", { ascending: false });
 
-  if (error || !data || data.length === 0) return [];
+  if (!error && data && data.length > 0) {
+    const conversations = data as Conversation[];
 
-  const conversations = data as Conversation[];
+    // Enrich with booking details and last message
+    const enriched: ConversationWithDetails[] = await Promise.all(
+      conversations.map(async (conv) => {
+        const enrichedConv: ConversationWithDetails = { ...conv };
 
-  // Enrich with booking details and last message
-  const enriched: ConversationWithDetails[] = await Promise.all(
-    conversations.map(async (conv) => {
-      const enrichedConv: ConversationWithDetails = { ...conv };
+        try {
+          const { data: booking } = await supabase
+            .from("bookings")
+            .select("origin, destination, status")
+            .eq("id", conv.booking_id)
+            .single();
+          if (booking) {
+            enrichedConv.booking_origin = booking.origin;
+            enrichedConv.booking_destination = booking.destination;
+            enrichedConv.booking_status = booking.status;
+          }
+        } catch { /* ignore */ }
 
-      // Fetch booking details
-      try {
-        const { data: booking } = await supabase
-          .from("bookings")
-          .select("origin, destination, status")
-          .eq("id", conv.booking_id)
-          .single();
-        if (booking) {
-          enrichedConv.booking_origin = booking.origin;
-          enrichedConv.booking_destination = booking.destination;
-          enrichedConv.booking_status = booking.status;
+        try {
+          const { data: lastMsg } = await supabase
+            .from("messages")
+            .select("content, created_at")
+            .eq("conversation_id", conv.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+          if (lastMsg) {
+            enrichedConv.last_message = lastMsg.content;
+            enrichedConv.last_message_at = lastMsg.created_at;
+          }
+        } catch { /* ignore */ }
+
+        return enrichedConv;
+      })
+    );
+
+    return enriched;
+  }
+
+  // Fallback: build conversations from user's bookings when conversations table is empty/blocked by RLS
+  try {
+    const { data: bookings } = await supabase
+      .from("bookings")
+      .select("id, origin, destination, status, container_id, exporter_id, created_at, transport_mode, cargo_type, cargo_weight, price, allocated_cbm, container_number")
+      .eq("exporter_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (bookings && bookings.length > 0) {
+      // Cache bookings in localStorage so offline AI generators can access them
+      for (const b of bookings) {
+        const existing = getOfflineBookings().find((ob) => ob.id === b.id);
+        if (!existing) {
+          saveOfflineBooking({
+            id: b.id,
+            exporter_id: b.exporter_id,
+            origin: b.origin || "",
+            destination: b.destination || "",
+            transport_mode: b.transport_mode || "sea",
+            container_type: "",
+            container_size: "",
+            booking_mode: "full",
+            space_cbm: b.allocated_cbm,
+            price: b.price,
+            status: b.status || "pending",
+            created_at: b.created_at,
+            cargo_type: b.cargo_type,
+            cargo_weight: b.cargo_weight,
+            container_id: b.container_id,
+            container_number: b.container_number,
+            allocated_cbm: b.allocated_cbm,
+          });
         }
-      } catch { /* ignore */ }
+      }
 
-      // Fetch last message
-      try {
-        const { data: lastMsg } = await supabase
-          .from("messages")
-          .select("content, created_at")
-          .eq("conversation_id", conv.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-        if (lastMsg) {
-          enrichedConv.last_message = lastMsg.content;
-          enrichedConv.last_message_at = lastMsg.created_at;
-        }
-      } catch { /* ignore */ }
+      return bookings.map((b) => {
+        const convId = `conv-offline-${b.id}`;
+        const msgs = getOfflineMessages(convId);
+        const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
 
-      return enrichedConv;
-    })
-  );
+        return {
+          id: convId,
+          booking_id: b.id,
+          container_id: b.container_id || "",
+          exporter_id: b.exporter_id,
+          provider_id: "provider",
+          booking_origin: b.origin,
+          booking_destination: b.destination,
+          booking_status: b.status,
+          last_message: lastMsg?.content,
+          last_message_at: lastMsg?.created_at || b.created_at,
+        } as ConversationWithDetails;
+      });
+    }
+  } catch (e) {
+    console.error("Failed to build conversations from bookings:", e);
+  }
 
-  return enriched;
+  // Last resort: offline bookings
+  const offlineConvos = ensureOfflineConversations(userId);
+  const offlineBookings = getOfflineBookings(userId);
+  const allOfflineBookings = getOfflineBookings();
+
+  return offlineConvos.map((conv) => {
+    const booking = offlineBookings.find((b) => b.id === conv.booking_id)
+      || allOfflineBookings.find((b) => b.id === conv.booking_id);
+    const msgs = getOfflineMessages(conv.id);
+    const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+
+    return {
+      ...conv,
+      booking_origin: booking?.origin,
+      booking_destination: booking?.destination,
+      booking_status: booking?.status,
+      last_message: lastMsg?.content,
+      last_message_at: lastMsg?.created_at,
+    } as ConversationWithDetails;
+  });
 }
 
 export async function fetchConversationMessages(conversationId: string) {
