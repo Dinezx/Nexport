@@ -85,6 +85,15 @@ Deno.serve(async (req) => {
     if (!aiRes.ok) {
       const errorText = await aiRes.text();
       console.error("Gemini error", aiRes.status, errorText);
+
+      // Bubble up rate limiting more clearly to the client.
+      if (aiRes.status === 429) {
+        return new Response(
+          JSON.stringify({ reply: "AI is temporarily rate limited. Please try again in a few seconds." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       return new Response(
         JSON.stringify({ reply: `AI service error (${aiRes.status})` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },

@@ -39,7 +39,7 @@ import { supabase } from "@/lib/supabase";
 
 type SenderRole = "exporter" | "provider" | "ai" | "system";
 type DeliveryStatus = "pending" | "sent" | "delivered" | "failed";
-type ChatMode = "ai" | "provider";
+type ChatMode = "provider";
 
 export default function Chat() {
   const { user } = useAuth();
@@ -49,7 +49,7 @@ export default function Chat() {
 
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([]);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [chatMode, setChatMode] = useState<ChatMode>("provider");
+  const [chatMode] = useState<ChatMode>("provider");
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -124,14 +124,8 @@ export default function Chat() {
           setMessages(parsed);
         } else {
           const msgData = await fetchConversationMessages(conversation.id);
-          if (chatMode === "ai") {
-            // Filter to non-provider when in AI mode
-            const aiMsgs = (msgData || []).filter((m: Message) => m.sender_role !== "provider");
-            setMessages(aiMsgs);
-          } else {
-            // Provider mode shows all messages to avoid AI interference
-            setMessages(msgData || []);
-          }
+          const providerOnly = (msgData || []).filter((m: Message) => m.sender_role !== "ai");
+          setMessages(providerOnly);
         }
       } catch (err) {
         console.error("Failed to load messages:", err);
@@ -175,13 +169,7 @@ export default function Chat() {
     setRateLimitError(null);
   };
 
-  const switchMode = (mode: ChatMode) => {
-    if (mode === chatMode) return;
-    setChatMode(mode);
-    setMessages([]);
-    setError(null);
-    setRateLimitError(null);
-  };
+  // Mode switching removed; always provider chat.
 
   const sendMessage = async () => {
     if (!text.trim() || !conversation || !user) return;
@@ -389,11 +377,7 @@ export default function Chat() {
                   {conversation ? formatRoute(conversation as ConversationWithDetails) : "NEXPORT Chat"}
                 </h3>
                 <span className="text-xs text-zinc-500">
-                  {conversation
-                    ? chatMode === "ai"
-                      ? "AI Assistant"
-                      : "Provider Chat"
-                    : "Select a conversation"}
+                  {conversation ? "Provider Chat" : "Select a conversation"}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -406,35 +390,7 @@ export default function Chat() {
               </div>
             </div>
 
-            {/* AI / Provider Toggle Tabs */}
-            {conversation && (
-              <div className="flex border-t border-zinc-800">
-                <button
-                  onClick={() => switchMode("ai")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-all duration-200",
-                    chatMode === "ai"
-                      ? "text-primary border-b-2 border-primary bg-primary/5"
-                      : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-                  )}
-                >
-                  <Bot className={cn("h-4 w-4 transition-transform duration-200", chatMode === "ai" && "scale-110")} />
-                  AI Assistant
-                </button>
-                <button
-                  onClick={() => switchMode("provider")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-all duration-200",
-                    chatMode === "provider"
-                      ? "text-blue-400 border-b-2 border-blue-400 bg-blue-400/5"
-                      : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-                  )}
-                >
-                  <Truck className={cn("h-4 w-4 transition-transform duration-200", chatMode === "provider" && "scale-110")} />
-                  Provider
-                </button>
-              </div>
-            )}
+            {/* Mode toggle removed; always provider view */}
           </div>
 
           {/* Alerts */}
@@ -462,23 +418,11 @@ export default function Chat() {
 
             {conversation && messages.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-zinc-500">
-                {chatMode === "ai" ? (
-                  <>
-                    <Sparkles className="h-10 w-10 mb-3 text-primary/50" />
-                    <p className="text-sm font-medium">AI Assistant</p>
-                    <p className="text-xs text-zinc-600 mt-1">
-                      Ask about ETA, pricing, shipment status, or container details.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <User className="h-10 w-10 mb-3 text-blue-400/50" />
-                    <p className="text-sm font-medium">Provider Chat</p>
-                    <p className="text-xs text-zinc-600 mt-1">
-                      Chat directly with the logistics provider about your shipment.
-                    </p>
-                  </>
-                )}
+                <User className="h-10 w-10 mb-3 text-blue-400/50" />
+                <p className="text-sm font-medium">Provider Chat</p>
+                <p className="text-xs text-zinc-600 mt-1">
+                  Chat directly with the logistics provider about your shipment.
+                </p>
               </div>
             )}
 
@@ -552,19 +496,7 @@ export default function Chat() {
             ))}
 
             {/* AI Thinking */}
-            {aiThinking && (
-              <div className="flex gap-3">
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                </div>
-                <div className="bg-zinc-800 border border-primary/20 px-4 py-2 rounded-lg max-w-[70%]">
-                  <p className="text-sm text-zinc-400 flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    AI is thinking…
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* AI thinking indicator removed (provider-only view) */}
 
             {/* Provider Typing */}
             {providerTyping && (
@@ -602,9 +534,7 @@ export default function Chat() {
               placeholder={
                 !conversation
                   ? "Select a conversation to start chatting"
-                  : chatMode === "ai"
-                    ? "Ask AI about ETA, pricing, tracking..."
-                    : "Message the provider..."
+                  : "Message the provider..."
               }
               disabled={loading || !conversation || !rateLimitStatus?.allowed}
               className="disabled:opacity-50"
@@ -612,9 +542,7 @@ export default function Chat() {
             <Button
               onClick={sendMessage}
               disabled={loading || !conversation || !rateLimitStatus?.allowed || !text.trim()}
-              className={cn(
-                chatMode === "provider" && "bg-blue-600 hover:bg-blue-700"
-              )}
+              className="bg-blue-600 hover:bg-blue-700"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
