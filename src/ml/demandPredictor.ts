@@ -11,6 +11,12 @@ export type DemandPrediction = {
     factors: string[];
 };
 
+export type DemandForecastPoint = {
+    month: number;
+    score: number;
+    level: DemandLevel;
+};
+
 const seasonalBoost: Record<number, number> = {
     0: 0.94,
     1: 0.96,
@@ -88,4 +94,20 @@ export async function predictContainerDemand(route: string, month: number): Prom
         sampleSize,
         factors,
     };
+}
+
+export async function forecastDemandSeries(route: string, periods: number = 3): Promise<DemandForecastPoint[]> {
+    const now = new Date();
+    const baseMonth = now.getMonth() + 1;
+    const points: DemandForecastPoint[] = [];
+    let carryScore = 55;
+
+    for (let i = 0; i < periods; i++) {
+        const month = ((baseMonth + i - 1) % 12) + 1;
+        const seasonal = seasonalBoost[month - 1] ?? 1;
+        carryScore = Math.min(100, Math.round(carryScore * 0.9 + seasonal * 25));
+        points.push({ month, score: carryScore, level: mapScoreToLevel(carryScore) });
+    }
+
+    return points;
 }

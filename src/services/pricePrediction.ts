@@ -8,6 +8,8 @@ export type PricePrediction = {
     currency: "INR" | "USD";
     confidence: PriceConfidence;
     factors: string[];
+    recommendedBookingDays: number;
+    trend: "falling" | "stable" | "rising";
 };
 
 type ContainerType = "20ft" | "40ft" | "reefer" | "dry" | "lcl" | string;
@@ -96,10 +98,15 @@ export function predictFreightPrice(
         `Season factor ${seasonFactor.toFixed(2)}`,
     ];
 
+    const demandPressure = seasonFactor > 1.05 ? "rising" : seasonFactor < 0.98 ? "falling" : "stable";
+    const recommendedBookingDays = demandPressure === "rising" ? 10 : demandPressure === "stable" ? 7 : 5;
+
     return {
         predictedPrice,
         currency,
         confidence: confidenceScore(origin, destination, distanceKm),
         factors,
+        recommendedBookingDays,
+        trend: demandPressure,
     };
 }

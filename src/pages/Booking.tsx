@@ -4,7 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { getOfflineSession, isSupabaseReachable } from "@/lib/offlineAuth";
 import { saveOfflineBooking } from "@/services/bookingService";
 import { predictEtaAndRisk } from "@/lib/prediction";
-import { predictDelayRisk } from "@/ml/delayPredictor";
+import { predictDelayRisk, estimateShipmentDelay, type DelayRiskLevel } from "@/ml/delayPredictor";
+import { suggestContainer, type ContainerSuggestion } from "@/services/containerOptimizer";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   Card,
@@ -1227,6 +1228,13 @@ export default function Booking() {
 
   const [availableContainers, setAvailableContainers] = useState<any[]>([]);
   const [loadingContainers, setLoadingContainers] = useState(false);
+  const [containerAdvice, setContainerAdvice] = useState<ContainerSuggestion | null>(null);
+  const [delayInsight, setDelayInsight] = useState<{
+    probability: number;
+    label: DelayRiskLevel;
+    expectedEtaDays: number;
+    factors: string[];
+  } | null>(null);
 
   const priceINR = calculatePriceINR(form);
 
@@ -1244,10 +1252,13 @@ export default function Booking() {
   };
 
   const renderCbmSuggestion = (cbm: number) => {
-    if (cbm <= 0) return "Enter your CBM to see the best option.";
-    if (cbm < 10) return "Suggestion: LCL (partial) is optimal for <10 CBM shipments.";
-    if (cbm <= 18) return "Suggestion: Compare LCL vs FCL — you are near the tipping point.";
-    return "Suggestion: FCL is more cost-effective for this volume.";
+    if (cbm <= 0 || !containerAdvice) return "Enter your CBM to see the best option.";
+    const lines = [
+      `Recommended: ${containerAdvice.recommendation}`,
+      `Total volume: ${containerAdvice.totalCbm.toFixed(2)} CBM`,
+      ...containerAdvice.rationale,
+    ];
+    return lines.join(" · ");
   };
 
   /* ---------------- FETCH AVAILABLE CONTAINERS ---------------- */
@@ -1376,6 +1387,25 @@ export default function Booking() {
       } catch {
         setDelayRiskLabel(null);
       }
+
+      try {
+        const cbmVal = Number(form.space_cbm) || 0;
+        const laneCongestion = Math.min(10, 4 + (cbmVal > 25 ? 2 : 1));
+        const mlDelay = estimateShipmentDelay({
+          origin: form.origin,
+          destination: form.destination,
+          transport: form.transport as "sea" | "road" | "air",
+          weatherIndex: form.transport === "air" ? 0.18 : form.transport === "road" ? 0.25 : 0.32,
+          portCongestionOrigin: laneCongestion,
+          portCongestionDestination: laneCongestion,
+          vesselScheduleReliability: 0.78,
+          historicalDelayRate: 0.24,
+          routeDistanceKm: undefined,
+        });
+        setDelayInsight(mlDelay);
+      } catch {
+        setDelayInsight(null);
+      }
     } catch (e) {
       console.error("Local ETA prediction failed", e);
       // Fallback to simple estimates
@@ -1383,10 +1413,33 @@ export default function Booking() {
       setEtaDays(fallbackDays[form.transport] ?? 10);
       setEtaConfidence("low");
       setDelayRiskLabel(null);
+      setDelayInsight(null);
     } finally {
       setLoading(false);
     }
   }, [step, form.origin, form.destination, form.transport, form.booking_mode, form.space_cbm]);
+
+  // Compute container suggestion whenever CBM or mode changes
+  useEffect(() => {
+    const cbmVal = Number(form.space_cbm) || 0;
+    if (cbmVal <= 0) {
+      setContainerAdvice(null);
+      return;
+    }
+    try {
+      const suggestion = suggestContainer({
+        length: 1,
+        width: 1,
+        height: Math.max(0.01, cbmVal),
+        quantity: 1,
+        priority: form.booking_mode === "partial" ? "standard" : "express",
+      });
+      setContainerAdvice(suggestion);
+    } catch (err) {
+      console.warn("CBM suggestion failed", err);
+      setContainerAdvice(null);
+    }
+  }, [form.space_cbm, form.booking_mode]);
 
   /* ---------------- VALIDATION ---------------- */
 
@@ -2166,6 +2219,26 @@ export default function Booking() {
                     )}>
                       <span className="font-semibold">Delay Risk: {delayRisk.toUpperCase()}</span>
                       {delayReason && <p className="mt-1 opacity-80">{delayReason}</p>}
+
+                {delayInsight && (
+                  <div className="p-4 rounded-lg border bg-muted/40">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                      <h4 className="font-semibold text-sm">ML Delay Risk (feature-based)</h4>
+                      <span className="ml-auto text-xs font-medium text-amber-400">
+                        {(delayInsight.probability * 100).toFixed(0)}% risk
+                      </span>
+                    </div>
+                    <p className="text-sm text-foreground/80">Expected arrival ~{delayInsight.expectedEtaDays} days</p>
+                    {delayInsight.factors.length > 0 && (
+                      <ul className="mt-2 text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                        {delayInsight.factors.slice(0, 3).map((f, idx) => (
+                          <li key={idx}>{f}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
                     </div>
                   )}
 
