@@ -46,7 +46,7 @@ export default function Tracking() {
 
   const [booking, setBooking] = useState<Booking | null>(null);
   const [events, setEvents] = useState<TrackingEvent[]>([]);
-  const [gps, setGps] = useState<GPS | null>(null);
+  const [gps, setGps] = useState<(GPS & { timestamp?: string }) | null>(null);
   const [routeCoords, setRouteCoords] = useState<RoutePoint[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -67,14 +67,44 @@ export default function Tracking() {
   const [error, setError] = useState("");
 
   const timelineOrder = [
+    "Payment completed",
     "Booking Confirmed",
     "Container Assigned",
     "Awaiting Pickup",
     "Cargo Picked Up",
     "In Transit",
+    "Delivered",
   ];
 
-  const orderedEvents = events
+  const normalizedEvents = events.map((e) => {
+    const title = (e.title || "").trim().toLowerCase();
+    // Force payment event completed when booking is paid
+    if (title === "payment completed" && booking?.status === "paid") {
+      return { ...e, status: "completed" };
+    }
+    // If the event already has status completed, keep it; otherwise fall back to original
+    return e;
+  });
+
+  // Inject a payment completed event if booking is paid but the event is missing
+  const hasPaymentEvent = normalizedEvents.some(
+    (e) => (e.title || "").trim().toLowerCase() === "payment completed"
+  );
+  const eventsWithPayment =
+    booking?.status === "paid" && !hasPaymentEvent
+      ? [
+          ...normalizedEvents,
+          {
+            id: `${bookingId}-payment`,
+            title: "Payment completed",
+            description: "Payment completed",
+            status: "completed",
+            location: "System",
+          },
+        ]
+      : normalizedEvents;
+
+  const orderedEvents = eventsWithPayment
     .filter((e, i, arr) => {
       const norm = (v: string) => v.trim().toLowerCase();
       return arr.findIndex((x) => norm(x.title) === norm(e.title)) === i;
@@ -231,6 +261,16 @@ export default function Tracking() {
     if (!booking || gps) return;
 
     const geocode = async (q: string): Promise<GPS | null> => {
+      const withTimeout = async (url: string, ms = 4000) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), ms);
+        try {
+          return await fetch(url, { referrerPolicy: "no-referrer", signal: ctrl.signal });
+        } finally {
+          clearTimeout(t);
+        }
+      };
+
       // Try progressively simpler queries with Nominatim
       const queries = [
         q,
@@ -240,18 +280,20 @@ export default function Tracking() {
 
       for (const query of queries) {
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
-            { referrerPolicy: "no-referrer" }
+          const res = await withTimeout(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`
           );
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const json = await res.json();
           if (json && json.length > 0) {
             return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon) };
           }
           // Brief delay between retries to respect rate limit
           await new Promise((r) => setTimeout(r, 1100));
-        } catch (e) {
-          console.error("Geocoding failed for query:", query, e);
+        } catch (e: any) {
+          // Switch to fallback (known locations or simulated) quietly when blocked/offline
+          console.info("Geocoding skipped, using fallback for", query);
+          break;
         }
       }
 
@@ -302,7 +344,7 @@ export default function Tracking() {
       try {
         const data = await fetchLiveLocation(bookingId);
         if (data) {
-          setGps({ lat: data.lat, lng: data.lng });
+          setGps({ lat: data.lat, lng: data.lng, timestamp: new Date().toISOString() } as any);
           console.debug("Live GPS:", { lat: data.lat, lng: data.lng });
         }
       } catch (err: any) {
@@ -376,7 +418,12 @@ export default function Tracking() {
         {gps && (
           <Card>
             <CardHeader>
-              <CardTitle>Live GPS Tracking</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Live GPS Tracking</CardTitle>
+                <div className="text-xs text-muted-foreground">
+                  {gps.timestamp ? `Updated ${new Date(gps.timestamp).toLocaleTimeString()}` : "Awaiting first fix"}
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="h-[350px] rounded-lg overflow-hidden">
@@ -390,8 +437,15 @@ export default function Tracking() {
                   />
                   <Marker position={[gps.lat, gps.lng]}>
                     <Popup>
-                      Container Location<br />
-                      {gps.lat.toFixed(4)}, {gps.lng.toFixed(4)}
+                      <div className="space-y-1">
+                        <div className="font-semibold">Container Location</div>
+                        <div>{gps.lat.toFixed(4)}, {gps.lng.toFixed(4)}</div>
+                        {gps.timestamp && (
+                          <div className="text-xs text-muted-foreground">
+                            Updated {new Date(gps.timestamp).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
                     </Popup>
                   </Marker>
                 </MapContainer>

@@ -1276,7 +1276,9 @@ export default function Booking() {
         .eq("container_size", sizeFormatted);
 
       if (originText) {
-        primaryQuery = primaryQuery.ilike("origin", `%${originText}%`);
+        primaryQuery = primaryQuery.or(
+          `origin.ilike.%${originText}%,current_location.ilike.%${originText}%`
+        );
       }
 
       const primary = await primaryQuery;
@@ -1290,7 +1292,9 @@ export default function Booking() {
         data = all.filter((c: any) =>
           (c.container_type === form.container_type || c.type === form.container_type) &&
           (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted)) &&
-          (!originText || (c.origin || "").toLowerCase().includes(originText))
+          (!originText ||
+            (c.origin || "").toLowerCase().includes(originText) ||
+            (c.current_location || "").toLowerCase().includes(originText))
         );
         console.log("After fallback filter:", data.length, "rows", res2.error?.message);
       }

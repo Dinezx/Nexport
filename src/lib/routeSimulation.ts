@@ -73,6 +73,10 @@ const KNOWN_LOCATIONS: Record<string, GPS> = {
   "antwerp": { lat: 51.2194, lng: 4.4025 },
   "felixstowe": { lat: 51.9615, lng: 1.3509 },
   "london": { lat: 51.5074, lng: -0.1278 },
+  "frankfurt": { lat: 50.1109, lng: 8.6821 },
+  "frankfurt am main": { lat: 50.1109, lng: 8.6821 },
+  "frankfurt airport": { lat: 50.0379, lng: 8.5622 },
+  "fra": { lat: 50.0379, lng: 8.5622 },
 
   // Africa
   "mombasa": { lat: -4.0435, lng: 39.6682 },

@@ -293,8 +293,11 @@ export default function Chat() {
     return `Booking ${conv.booking_id.slice(0, 8).toUpperCase()}`;
   };
 
-  const isOwnMessage = (msg: Message) =>
-    msg.sender_id === user?.id;
+  const isOwnMessage = (msg: Message) => {
+    if (!user) return false;
+    // Treat messages from the current user's role as "own", others (e.g., provider vs exporter) as remote.
+    return msg.sender_role === user.role;
+  };
 
   return (
     <DashboardLayout userType={user?.role === "provider" ? "provider" : "exporter"}>

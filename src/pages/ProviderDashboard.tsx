@@ -105,6 +105,7 @@ export default function ProviderDashboard() {
 
       // Fetch bookings for provider's containers
       const ctrIds = ctrRows.map((c) => c.id);
+      let bkRows: BookingRow[] = [];
       if (ctrIds.length) {
         const { data: bk, error: bkErr } = await supabase
           .from("bookings")
@@ -113,7 +114,7 @@ export default function ProviderDashboard() {
           .order("created_at", { ascending: false });
 
         if (bkErr) throw bkErr;
-        const bkRows = (bk ?? []) as BookingRow[];
+        bkRows = (bk ?? []) as BookingRow[];
         setBookings(bkRows);
 
         // Fetch tracking events
@@ -131,6 +132,8 @@ export default function ProviderDashboard() {
             map[e.booking_id].push(e);
           });
           setTrackingMap(map);
+        } else {
+          setTrackingMap({});
         }
       } else {
         setBookings([]);
