@@ -97,6 +97,9 @@ export default function Tracking() {
       }
       return { ...e, status: "completed" };
     }
+    if (title === "delivered") {
+      return { ...e, status: "completed" };
+    }
     // If the event already has status completed, keep it; otherwise fall back to original
     return e;
   });
@@ -105,6 +108,10 @@ export default function Tracking() {
   const hasPaymentEvent = normalizedEvents.some(
     (e) => (e.title || "").trim().toLowerCase() === "payment completed"
   );
+  const hasDeliveredEvent = normalizedEvents.some(
+    (e) => (e.title || "").trim().toLowerCase() === "delivered",
+  );
+
   const eventsWithPayment =
     (booking?.status === "paid" || booking?.status === "payment_completed") && !hasPaymentEvent
       ? [
@@ -119,10 +126,24 @@ export default function Tracking() {
         ]
       : normalizedEvents;
 
+  const eventsWithDelivery =
+    booking?.status === "delivered" && !hasDeliveredEvent
+      ? [
+          ...eventsWithPayment,
+          {
+            id: `${bookingId}-delivered`,
+            title: "Delivered",
+            description: "Shipment delivered",
+            status: "completed",
+            location: booking?.destination ?? "System",
+          },
+        ]
+      : eventsWithPayment;
+
   // Deduplicate by title, prefer completed and latest created_at
   const dedupedEvents = (() => {
     const seen = new Map<string, any>();
-    for (const e of eventsWithPayment) {
+    for (const e of eventsWithDelivery) {
       const key = (e.title || "").trim().toLowerCase();
       const existing = seen.get(key);
       const isCompleted = e.status === "completed";

@@ -25,6 +25,7 @@ import {
   fetchTrackingCore,
   type TrackingEvent,
 } from "@/services/trackingService";
+import { getBookingDocuments } from "@/services/documentService";
 
 /* ---------------- CONSTANTS ---------------- */
 
@@ -58,6 +59,7 @@ export default function ProviderTracking() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<TrackingEvent[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
   const [selectedStage, setSelectedStage] = useState("");
   const [updating, setUpdating] = useState(false);
   const [updatingBookingStatus, setUpdatingBookingStatus] = useState(false);
@@ -74,6 +76,12 @@ export default function ProviderTracking() {
         setBooking(b as Booking);
         setEvents(ev);
         setBookingStatusValue(b.status);
+        try {
+          const docs = await getBookingDocuments(b.id);
+          setDocuments(docs);
+        } catch (err) {
+          console.error("Document fetch failed", err);
+        }
       } catch (err) {
         console.error("Failed to fetch booking:", err);
         toast({ title: "Failed to load booking", variant: "destructive" });
@@ -174,9 +182,6 @@ export default function ProviderTracking() {
   };
 
   /* ---------------- EXISTING EVENT TITLES (to filter dropdown) ------ */
-  const existingTitles = new Set(dedupedEvents.map((e) => e.title));
-  const availableStages = TRACKING_STAGES.filter((s) => !existingTitles.has(s.label));
-
   // Normalize and dedupe events for display
   const normalizedEvents = events.map((e) => {
     const title = (e.title || "").trim().toLowerCase();
@@ -223,6 +228,24 @@ export default function ProviderTracking() {
     }
     return Array.from(seen.values());
   })();
+
+  const existingTitles = new Set(dedupedEvents.map((e) => e.title));
+  const availableStages = TRACKING_STAGES.filter((s) => !existingTitles.has(s.label));
+
+  const docTypes = [
+    { key: "invoice", label: "Invoice" },
+    { key: "packing_list", label: "Packing List" },
+    { key: "bill_of_lading", label: "Bill Of Lading" },
+    { key: "customs", label: "Customs" },
+  ] as const;
+
+  const docsByType = documents.reduce<Record<string, any>>((acc, doc) => {
+    const pathParts = (doc.path || "").split("/");
+    const nameParts = (doc.name || "").split("/");
+    const key = (pathParts[1] || nameParts[0]) as string;
+    acc[key] = doc;
+    return acc;
+  }, {});
 
   /* ---------------- UI ---------------- */
 
@@ -396,6 +419,65 @@ export default function ProviderTracking() {
                       </div>
                     ))}
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Shipping Documents (view-only) */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Shipping Documents</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {docTypes.map(({ key, label }) => {
+                    const doc = docsByType[key];
+                    return (
+                      <div key={key} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+                        <div className="flex flex-col gap-1 text-left">
+                          <span className="text-sm font-medium">{label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {doc?.displayName || doc?.name || "Not uploaded"}
+                          </span>
+                          {doc?.created_at && (
+                            <span className="text-[11px] text-muted-foreground">Uploaded {new Date(doc.created_at).toLocaleString()}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {doc?.url && (
+                            <a
+                              href={doc.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs font-semibold text-primary underline"
+                            >
+                              View
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {documents.length > 0 ? (
+                  <div className="space-y-2 text-sm">
+                    {documents.map((doc) => (
+                      <a
+                        key={doc.path}
+                        href={doc.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between border rounded-md px-3 py-2 hover:bg-muted/50"
+                      >
+                        <span>{doc.name}</span>
+                        <span className="text-xs text-muted-foreground">{new Date(doc.created_at).toLocaleString()}</span>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No documents uploaded yet.</p>
                 )}
               </CardContent>
             </Card>
