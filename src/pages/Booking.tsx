@@ -1162,6 +1162,8 @@ const LCL_RATE_USD: Record<string, number> = {
   air: 120,
 };
 
+const BOOKING_DRAFT_KEY = "nexport_booking_draft_v1";
+
 function calculatePriceINR(form: any) {
   if (form.booking_mode === "full") {
     let usd = FCL_BASE_USD[form.container_size] || 0;
@@ -1236,6 +1238,28 @@ export default function Booking() {
     factors: string[];
   } | null>(null);
 
+  // Load draft on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(BOOKING_DRAFT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setForm((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch (err) {
+      console.warn("Booking draft load failed", err);
+    }
+  }, []);
+
+  // Persist draft whenever the form changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOOKING_DRAFT_KEY, JSON.stringify(form));
+    } catch (err) {
+      console.warn("Booking draft save failed", err);
+    }
+  }, [form]);
+
   const priceINR = calculatePriceINR(form);
 
   const getFilteredLocations = (mode: string) => {
@@ -1276,51 +1300,66 @@ export default function Booking() {
 
     const sizeFormatted = `${form.container_size}ft`;
     const normalizeSize = (v?: string | null) => (v || "").replace(/\s+/g, "").toLowerCase();
-    const originText = (form.origin || "").split(",")[0].trim().toLowerCase();
+    const normalizeText = (v: string) => v.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    const originText = normalizeText((form.origin || "").split(",")[0] || "");
+    const cityOnly = originText.split(" ")[0];
+
+    const cityAlias: Record<string, string[]> = {
+      bangalore: ["bengaluru", "blr"],
+      bengaluru: ["bangalore", "blr"],
+      mumbai: ["bombay", "bom"],
+      chennai: ["maa"],
+      hyderabad: ["hyd"],
+      delhi: ["new delhi", "del"],
+    };
+
+    const expandAliases = (city: string) => {
+      if (!city) return [] as string[];
+      const aliases = cityAlias[city] || [];
+      return [city, ...aliases];
+    };
+    const transport = form.transport;
 
     try {
-      // Simple fetch with client-side normalization fallback
-      let primaryQuery = supabase
-        .from("containers")
-        .select("*")
-        .eq("container_type", form.container_type)
-        .eq("container_size", sizeFormatted);
+      const res = await supabase.from("containers").select("*").limit(200);
+      let data: any[] = res.data || [];
+      console.log("containers fetched:", data.length, "err", res.error?.message);
 
-      if (originText) {
-        primaryQuery = primaryQuery.or(
-          `origin.ilike.%${originText}%,current_location.ilike.%${originText}%`
-        );
-      }
+      const filtered = data.filter((c: any) => {
+        const sizeOk = normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted);
+        const typeOk = !form.container_type || c.container_type === form.container_type || c.type === form.container_type;
+        const transportOk = !transport || !c.transport || c.transport === transport;
+        const containerOrigin = normalizeText(c.origin || "");
+        const containerLoc = normalizeText(c.current_location || "");
 
-      const primary = await primaryQuery;
+        let originOk = true;
+        if (originText) {
+          const aliases = expandAliases(cityOnly);
+          originOk = aliases.some((alias) =>
+            containerOrigin.includes(alias) || containerLoc.includes(alias)
+          ) ||
+          containerOrigin.includes(originText) || containerLoc.includes(originText) ||
+          containerOrigin.includes(cityOnly) || containerLoc.includes(cityOnly);
+        }
+        return sizeOk && typeOk && transportOk && originOk;
+      });
 
-      let data: any[] = primary.data || [];
-      console.log("Main client containers:", data.length, "rows", primary.error?.message);
-
-      if (!data || data.length === 0) {
-        const res2 = await supabase.from("containers").select("*");
-        const all = res2.data || [];
-        data = all.filter((c: any) =>
-          (c.container_type === form.container_type || c.type === form.container_type) &&
-          (normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted)) &&
-          (!originText ||
-            (c.origin || "").toLowerCase().includes(originText) ||
-            (c.current_location || "").toLowerCase().includes(originText))
-        );
-        console.log("After fallback filter:", data.length, "rows", res2.error?.message);
-      }
-
-      if (!data || data.length === 0) {
-        console.log("[containers] No DB rows");
+      if (originText && filtered.length === 0) {
         setAvailableContainers([]);
         setLoadingContainers(false);
         return;
       }
 
-      // Compute simple availability without extra filtering
-      const filteredContainers = data.map((c: any) => {
-        const baseTotal = c.total_space_cbm ?? 0;
-        const availSpace = c.available_space_cbm ?? baseTotal;
+      const baseList = filtered.length ? filtered : data.filter((c: any) => {
+        const sizeOk = normalizeSize(c.container_size) === normalizeSize(sizeFormatted) || normalizeSize(c.size) === normalizeSize(sizeFormatted);
+        const typeOk = !form.container_type || c.container_type === form.container_type || c.type === form.container_type;
+        const transportOk = !transport || !c.transport || c.transport === transport;
+        return sizeOk && typeOk && transportOk;
+      });
+
+      const mapped = baseList.map((c: any) => {
+        const baseTotal = c.total_space_cbm ?? c.totalSpace ?? c.capacity ?? 0;
+        const availSpace = c.available_space_cbm ?? c.availableSpace ?? baseTotal;
         return {
           ...c,
           available_space_cbm: availSpace,
@@ -1329,9 +1368,9 @@ export default function Booking() {
         };
       });
 
-      setAvailableContainers(filteredContainers);
+      setAvailableContainers(mapped);
     } catch (err) {
-      console.warn("Container fetch failed, using demo containers:", err);
+      console.warn("Container fetch failed", err);
       setAvailableContainers([]);
     } finally {
       setLoadingContainers(false);
@@ -1344,7 +1383,7 @@ export default function Booking() {
     } else {
       setAvailableContainers([]);
     }
-  }, [form.booking_mode, form.container_type, form.container_size]);
+  }, [form.booking_mode, form.container_type, form.container_size, form.origin, form.destination]);
 
 
   const steps = [

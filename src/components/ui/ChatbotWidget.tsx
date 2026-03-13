@@ -87,19 +87,22 @@ export function ChatbotWidget() {
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-6 right-4 sm:bottom-8 sm:right-6 z-50 flex flex-col items-end gap-2">
       {/* Floating button */}
       <button
         type="button"
+        aria-label={isOpen ? "Close Nexport AI" : "Chat with Nexport AI"}
         onClick={() => setIsOpen((v) => !v)}
-        className="rounded-full bg-yellow-400 text-black shadow-lg shadow-black/10 border border-black/5 px-4 py-3 font-semibold hover:shadow-xl transition"
+        className={`rounded-full bg-yellow-400 text-black shadow-lg shadow-black/10 border border-black/5 hover:shadow-xl transition font-semibold ${
+          isOpen ? "px-4 py-3" : "h-12 w-12 flex items-center justify-center text-sm"
+        }`}
       >
-        {isOpen ? "Close Nexport AI" : "Chat with Nexport AI"}
+        {isOpen ? "Close Nexport AI" : "AI"}
       </button>
 
       {/* Panel */}
       {isOpen && (
-        <div className="mt-3 w-80 sm:w-96 max-h-[75vh] rounded-xl border border-black/10 shadow-2xl bg-white/95 backdrop-blur-md flex flex-col overflow-hidden">
+        <div className="mt-2 w-80 sm:w-96 max-h-[75vh] rounded-xl border border-black/10 shadow-2xl bg-white/95 backdrop-blur-md flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-black/5 bg-gradient-to-r from-yellow-400/80 via-yellow-300/60 to-white/80 flex items-center justify-between">
             <div className="font-semibold text-black">Nexport AI Assistant</div>
             <span className="text-xs text-black/70">Export logistics help</span>
