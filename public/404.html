@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Redirecting…</title>
+    <meta http-equiv="refresh" content="0; url=/Nexport/" />
+    <script>
+      (function() {
+        var origin = window.location.origin;
+        var path = window.location.pathname;
+        var search = window.location.search || "";
+        var hash = window.location.hash || "";
+        var base = "/Nexport";
+        // Strip leading base if already present to avoid duplication
+        if (path.startsWith(base)) {
+          path = path.slice(base.length);
+        }
+        var target = origin + base + path + search + hash;
+        window.location.replace(target);
+      })();
+    </script>
+  </head>
+  <body>
+    <p>Redirecting…</p>
+  </body>
+</html>
