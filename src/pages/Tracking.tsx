@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from "react-leaflet";
 import "@/lib/leafletFix";
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, MapPin, CheckCircle, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { fetchTrackingCore, subscribeTrackingEvents, fetchLiveLocation } from "@/services/trackingService";
-import { buildRoutePoints, lookupKnownLocation } from "@/lib/routeSimulation";
+import { buildModeRoutePoints, lookupKnownLocation } from "@/lib/routeSimulation";
 import { supabase } from "@/lib/supabase";
 import { uploadDocument, getBookingDocuments, type DocumentType } from "@/services/documentService";
 import { submitProviderReview } from "@/services/providerReviewService";
@@ -47,6 +47,8 @@ export default function Tracking() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [events, setEvents] = useState<TrackingEvent[]>([]);
   const [gps, setGps] = useState<(GPS & { timestamp?: string }) | null>(null);
+  const [displayGps, setDisplayGps] = useState<(GPS & { timestamp?: string }) | null>(null);
+  const [livePath, setLivePath] = useState<GPS[]>([]);
   const [routeCoords, setRouteCoords] = useState<RoutePoint[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -62,6 +64,15 @@ export default function Tracking() {
     { key: "bill_of_lading", label: "Bill Of Lading" },
     { key: "customs", label: "Customs" },
   ];
+
+  const routeStyle = (mode?: string) => {
+    const m = (mode || "").toLowerCase();
+    if (m === "air") return { color: "#f97316", weight: 3, dashArray: "6 6" }; // dashed orange
+    if (m === "sea" || m === "ocean" || m === "ship") return { color: "#0ea5e9", weight: 4 }; // solid blue
+    if (m === "rail" || m === "railway" || m === "train") return { color: "#6366f1", weight: 3, dashArray: "2 8" }; // dotted purple
+    if (m === "road" || m === "truck") return { color: "#16a34a", weight: 4, dashArray: "10 6" }; // dashed green
+    return { color: "#2563eb", weight: 3 }; // default blue
+  };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -131,6 +142,7 @@ export default function Tracking() {
 
   // 🚫 stop polling if forbidden
   const gpsBlocked = useRef(false);
+  const animRef = useRef<number | null>(null);
 
   /* ---------- LOAD BOOKING + TIMELINE ---------- */
 
@@ -260,6 +272,7 @@ export default function Tracking() {
   useEffect(() => {
     if (!booking || gps) return;
 
+    // cspell:ignore Nominatim
     const geocode = async (q: string): Promise<GPS | null> => {
       const withTimeout = async (url: string, ms = 4000) => {
         const ctrl = new AbortController();
@@ -319,17 +332,25 @@ export default function Tracking() {
       if (dc) coords.push({ ...dc, label: "Destination", address: d });
 
       // If geocoding failed, fall back to simulated route points
-      if (coords.length === 0) {
+      if (coords.length >= 2) {
+        const modePath = buildModeRoutePoints(o, d, booking?.transport_mode, coords[0], coords[coords.length - 1]);
+        const labeled = modePath.map((p, i) => ({
+          ...p,
+          label: i === 0 ? "Origin" : i === modePath.length - 1 ? "Destination" : p.label,
+          address: i === 0 ? o : i === modePath.length - 1 ? d : undefined,
+        }));
+        console.debug("Geocoded mode path:", labeled);
+        setRouteCoords(labeled);
+      } else {
         console.warn("Nominatim geocoding failed, using simulated route");
-        const simPoints = buildRoutePoints(o, d, 1);
-        if (simPoints.length >= 2) {
-          coords.push({ ...simPoints[0], label: "Origin", address: o });
-          coords.push({ ...simPoints[simPoints.length - 1], label: "Destination", address: d });
-        }
+        const simPoints = buildModeRoutePoints(o, d, booking?.transport_mode);
+        const labeled = simPoints.map((p, i) => ({
+          ...p,
+          label: i === 0 ? "Origin" : i === simPoints.length - 1 ? "Destination" : p.label,
+          address: i === 0 ? o : i === simPoints.length - 1 ? d : undefined,
+        }));
+        setRouteCoords(labeled);
       }
-
-      console.debug("Geocoded route coords:", coords);
-      setRouteCoords(coords);
     })();
   }, [booking, gps]);
 
@@ -344,7 +365,16 @@ export default function Tracking() {
       try {
         const data = await fetchLiveLocation(bookingId);
         if (data) {
-          setGps({ lat: data.lat, lng: data.lng, timestamp: new Date().toISOString() } as any);
+          const point = { lat: data.lat, lng: data.lng, timestamp: new Date().toISOString() } as any;
+          setGps(point);
+          setDisplayGps(point);
+          setLivePath((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && Math.abs(last.lat - point.lat) < 1e-6 && Math.abs(last.lng - point.lng) < 1e-6) {
+              return prev;
+            }
+            return [...prev.slice(-49), { lat: point.lat, lng: point.lng }];
+          });
           console.debug("Live GPS:", { lat: data.lat, lng: data.lng });
         }
       } catch (err: any) {
@@ -360,6 +390,35 @@ export default function Tracking() {
     const interval = setInterval(loadGps, 5000);
     return () => clearInterval(interval);
   }, [bookingId]);
+
+  // Tween between live GPS points for smoother motion
+  useEffect(() => {
+    if (!gps) return;
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+
+    const start = performance.now();
+    const duration = 1500; // ms
+    const from = displayGps ?? { ...gps };
+    const to = { ...gps };
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const lat = from.lat + (to.lat - from.lat) * t;
+      const lng = from.lng + (to.lng - from.lng) * t;
+      setDisplayGps({ lat, lng, timestamp: to.timestamp });
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(step);
+      }
+    };
+
+    animRef.current = requestAnimationFrame(step);
+
+    return () => {
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, [gps]);
+
+  // No simulation fallback: if no live GPS, map stays static/fallback map shows planned route
 
   /* ---------------- UI ---------------- */
 
@@ -415,34 +474,47 @@ export default function Tracking() {
         )}
 
         {/* GPS MAP (ONLY IF ALLOWED) */}
-        {gps && (
+        {displayGps && (
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Live GPS Tracking</CardTitle>
                 <div className="text-xs text-muted-foreground">
-                  {gps.timestamp ? `Updated ${new Date(gps.timestamp).toLocaleTimeString()}` : "Awaiting first fix"}
+                  {displayGps?.timestamp
+                    ? `Updated ${new Date(displayGps.timestamp).toLocaleTimeString()}`
+                    : "Awaiting first fix"}
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="h-[350px] rounded-lg overflow-hidden">
                 <MapContainer
-                  center={[gps.lat, gps.lng]}
+                  center={[displayGps.lat, displayGps.lng]}
                   zoom={6}
                   style={{ height: "100%", width: "100%" }}
                 >
                   <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
-                  <Marker position={[gps.lat, gps.lng]}>
+                  {livePath.length > 1 && (
+                    <Polyline
+                      positions={livePath.map((p) => [p.lat, p.lng] as [number, number])}
+                      pathOptions={{ ...routeStyle(booking?.transport_mode), opacity: 0.7 }}
+                    />
+                  )}
+                  <CircleMarker
+                    center={[displayGps.lat, displayGps.lng]}
+                    radius={10}
+                    pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.2 }}
+                  />
+                  <Marker position={[displayGps.lat, displayGps.lng]}>
                     <Popup>
                       <div className="space-y-1">
                         <div className="font-semibold">Container Location</div>
-                        <div>{gps.lat.toFixed(4)}, {gps.lng.toFixed(4)}</div>
-                        {gps.timestamp && (
+                        <div>{displayGps.lat.toFixed(4)}, {displayGps.lng.toFixed(4)}</div>
+                        {displayGps?.timestamp && (
                           <div className="text-xs text-muted-foreground">
-                            Updated {new Date(gps.timestamp).toLocaleString()}
+                            Updated {new Date(displayGps.timestamp).toLocaleString()}
                           </div>
                         )}
                       </div>
@@ -517,7 +589,7 @@ export default function Tracking() {
                     {routeCoords.length > 1 && (
                       <Polyline
                         positions={routeCoords.map((c) => [c.lat, c.lng] as [number, number])}
-                        pathOptions={{ color: "#2563eb" }}
+                        pathOptions={routeStyle(booking?.transport_mode)}
                       />
                     )}
                   </MapContainer>

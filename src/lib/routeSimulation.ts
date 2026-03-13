@@ -148,6 +148,53 @@ const hashString = (value: string): number => {
   return hash;
 };
 
+const toRad = (v: number) => (v * Math.PI) / 180;
+const toDeg = (v: number) => (v * 180) / Math.PI;
+
+const greatCirclePoints = (start: GPS, end: GPS, steps: number): RoutePoint[] => {
+  const φ1 = toRad(start.lat);
+  const λ1 = toRad(start.lng);
+  const φ2 = toRad(end.lat);
+  const λ2 = toRad(end.lng);
+
+  const Δ = 2 * Math.asin(
+    Math.sqrt(
+      Math.sin((φ2 - φ1) / 2) ** 2 +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin((λ2 - λ1) / 2) ** 2,
+    ),
+  );
+
+  // If points are identical or extremely close, just return ends
+  if (!Number.isFinite(Δ) || Δ < 1e-6) {
+    return [
+      { ...start, label: "Origin" },
+      { ...end, label: "Destination" },
+    ];
+  }
+
+  const points: RoutePoint[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const A = Math.sin((1 - t) * Δ) / Math.sin(Δ);
+    const B = Math.sin(t * Δ) / Math.sin(Δ);
+
+    const x = A * Math.cos(φ1) * Math.cos(λ1) + B * Math.cos(φ2) * Math.cos(λ2);
+    const y = A * Math.cos(φ1) * Math.sin(λ1) + B * Math.cos(φ2) * Math.sin(λ2);
+    const z = A * Math.sin(φ1) + B * Math.sin(φ2);
+
+    const φ = Math.atan2(z, Math.sqrt(x * x + y * y));
+    const λ = Math.atan2(y, x);
+
+    points.push({
+      lat: toDeg(φ),
+      lng: toDeg(λ),
+      label: i === 0 ? "Origin" : i === steps ? "Destination" : `Leg ${i}`,
+    });
+  }
+
+  return points;
+};
+
 export const buildRoutePoints = (
   origin: string,
   destination: string,
@@ -155,18 +202,27 @@ export const buildRoutePoints = (
 ): RoutePoint[] => {
   const start = pseudoCoordFromName(origin);
   const end = pseudoCoordFromName(destination);
-  const points: RoutePoint[] = [];
+  return greatCirclePoints(start, end, steps);
+};
 
-  for (let i = 0; i <= steps; i += 1) {
-    const t = i / steps;
-    points.push({
-      lat: start.lat + (end.lat - start.lat) * t,
-      lng: start.lng + (end.lng - start.lng) * t,
-      label: i === 0 ? "Origin" : i === steps ? "Destination" : `Leg ${i}`,
-    });
-  }
+export const buildModeRoutePoints = (
+  origin: string,
+  destination: string,
+  mode?: string,
+  startOverride?: GPS,
+  endOverride?: GPS,
+): RoutePoint[] => {
+  const start = startOverride ?? pseudoCoordFromName(origin);
+  const end = endOverride ?? pseudoCoordFromName(destination);
+  const m = (mode || "").toLowerCase();
 
-  return points;
+  let steps = 24;
+  if (m === "air") steps = 40;
+  else if (m === "sea" || m === "ocean" || m === "ship") steps = 32;
+  else if (m === "rail" || m === "railway" || m === "train") steps = 28;
+  else if (m === "road" || m === "truck") steps = 24;
+
+  return greatCirclePoints(start, end, steps);
 };
 
 export const buildTrackingEvent = (progress: number): TrackingEvent => {
