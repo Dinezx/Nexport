@@ -174,8 +174,55 @@ export default function ProviderTracking() {
   };
 
   /* ---------------- EXISTING EVENT TITLES (to filter dropdown) ------ */
-  const existingTitles = new Set(events.map((e) => e.title));
+  const existingTitles = new Set(dedupedEvents.map((e) => e.title));
   const availableStages = TRACKING_STAGES.filter((s) => !existingTitles.has(s.label));
+
+  // Normalize and dedupe events for display
+  const normalizedEvents = events.map((e) => {
+    const title = (e.title || "").trim().toLowerCase();
+    if (title === "payment completed") {
+      return { ...e, status: "completed" };
+    }
+    return e;
+  });
+
+  const hasPaymentEvent = normalizedEvents.some(
+    (e) => (e.title || "").trim().toLowerCase() === "payment completed",
+  );
+
+  const withPayment =
+    (booking?.status === "paid" || booking?.status === "payment_completed") && !hasPaymentEvent
+      ? [
+          ...normalizedEvents,
+          {
+            id: `${bookingId}-payment`,
+            title: "Payment completed",
+            description: "Payment completed",
+            status: "completed",
+            location: "System",
+          } as TrackingEvent,
+        ]
+      : normalizedEvents;
+
+  const dedupedEvents = (() => {
+    const seen = new Map<string, TrackingEvent>();
+    for (const e of withPayment) {
+      const key = (e.title || "").trim().toLowerCase();
+      const existing = seen.get(key);
+      const isCompleted = e.status === "completed";
+      const existingCompleted = existing?.status === "completed";
+      const createdNew = (e as any).created_at ? new Date((e as any).created_at).getTime() : 0;
+      const createdExisting = (existing as any)?.created_at ? new Date((existing as any).created_at).getTime() : 0;
+
+      const shouldReplace =
+        !existing ||
+        (isCompleted && !existingCompleted) ||
+        createdNew > createdExisting;
+
+      if (shouldReplace) seen.set(key, e);
+    }
+    return Array.from(seen.values());
+  })();
 
   /* ---------------- UI ---------------- */
 
@@ -326,11 +373,11 @@ export default function ProviderTracking() {
                 <CardTitle>Current Tracking Timeline</CardTitle>
               </CardHeader>
               <CardContent>
-                {events.length === 0 ? (
+                {dedupedEvents.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No tracking events yet.</p>
                 ) : (
                   <div className="space-y-4">
-                    {events.map((ev, i) => (
+                    {dedupedEvents.map((ev) => (
                       <div key={ev.id} className="flex items-start gap-3">
                         <div className="mt-0.5">
                           {ev.status === "completed" ? (

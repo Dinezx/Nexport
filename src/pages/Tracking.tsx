@@ -90,7 +90,11 @@ export default function Tracking() {
   const normalizedEvents = events.map((e) => {
     const title = (e.title || "").trim().toLowerCase();
     // Force payment event completed when booking is paid
-    if (title === "payment completed" && booking?.status === "paid") {
+    if (title === "payment completed") {
+      // Mark payment step completed once it exists, regardless of event status value
+      if (booking?.status === "paid" || booking?.status === "payment_completed") {
+        return { ...e, status: "completed" };
+      }
       return { ...e, status: "completed" };
     }
     // If the event already has status completed, keep it; otherwise fall back to original
@@ -102,7 +106,7 @@ export default function Tracking() {
     (e) => (e.title || "").trim().toLowerCase() === "payment completed"
   );
   const eventsWithPayment =
-    booking?.status === "paid" && !hasPaymentEvent
+    (booking?.status === "paid" || booking?.status === "payment_completed") && !hasPaymentEvent
       ? [
           ...normalizedEvents,
           {
@@ -115,7 +119,30 @@ export default function Tracking() {
         ]
       : normalizedEvents;
 
-  const orderedEvents = eventsWithPayment
+  // Deduplicate by title, prefer completed and latest created_at
+  const dedupedEvents = (() => {
+    const seen = new Map<string, any>();
+    for (const e of eventsWithPayment) {
+      const key = (e.title || "").trim().toLowerCase();
+      const existing = seen.get(key);
+      const isCompleted = e.status === "completed";
+      const existingCompleted = existing?.status === "completed";
+      const createdNew = (e as any).created_at ? new Date((e as any).created_at).getTime() : 0;
+      const createdExisting = existing?.created_at ? new Date(existing.created_at).getTime() : 0;
+
+      const shouldReplace =
+        !existing ||
+        (isCompleted && !existingCompleted) ||
+        createdNew > createdExisting;
+
+      if (shouldReplace) {
+        seen.set(key, e);
+      }
+    }
+    return Array.from(seen.values());
+  })();
+
+  const orderedEvents = dedupedEvents
     .filter((e, i, arr) => {
       const norm = (v: string) => v.trim().toLowerCase();
       return arr.findIndex((x) => norm(x.title) === norm(e.title)) === i;
@@ -143,6 +170,8 @@ export default function Tracking() {
   // 🚫 stop polling if forbidden
   const gpsBlocked = useRef(false);
   const animRef = useRef<number | null>(null);
+  const simTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [simActive, setSimActive] = useState(false);
 
   /* ---------- LOAD BOOKING + TIMELINE ---------- */
 
@@ -419,6 +448,51 @@ export default function Tracking() {
   }, [gps]);
 
   // No simulation fallback: if no live GPS, map stays static/fallback map shows planned route
+  useEffect(() => {
+    if (gps || routeCoords.length < 2) {
+      if (simTimer.current) {
+        clearInterval(simTimer.current);
+        simTimer.current = null;
+      }
+      setSimActive(false);
+      return;
+    }
+
+    if (simTimer.current) return; // already running
+
+    setSimActive(true);
+    let progress = 0;
+    const stepCount = 200; // points along the route
+    const startPt = routeCoords[0];
+    const endPt = routeCoords[routeCoords.length - 1];
+
+    simTimer.current = setInterval(() => {
+      if (gps) {
+        if (simTimer.current) {
+          clearInterval(simTimer.current);
+          simTimer.current = null;
+        }
+        setSimActive(false);
+        return;
+      }
+
+      const t = (progress % stepCount) / (stepCount - 1);
+      const lat = startPt.lat + (endPt.lat - startPt.lat) * t;
+      const lng = startPt.lng + (endPt.lng - startPt.lng) * t;
+      const simPoint = { lat, lng, timestamp: new Date().toISOString() };
+      setDisplayGps(simPoint);
+      setLivePath((prev) => [...prev.slice(-99), { lat, lng }]);
+      progress += 1;
+    }, 800);
+
+    return () => {
+      if (simTimer.current) {
+        clearInterval(simTimer.current);
+        simTimer.current = null;
+      }
+      setSimActive(false);
+    };
+  }, [gps, routeCoords]);
 
   /* ---------------- UI ---------------- */
 
@@ -481,7 +555,7 @@ export default function Tracking() {
                 <CardTitle>Live GPS Tracking</CardTitle>
                 <div className="text-xs text-muted-foreground">
                   {displayGps?.timestamp
-                    ? `Updated ${new Date(displayGps.timestamp).toLocaleTimeString()}`
+                    ? `${simActive ? "Simulated" : "Updated"} ${new Date(displayGps.timestamp).toLocaleTimeString()}`
                     : "Awaiting first fix"}
                 </div>
               </div>
@@ -557,17 +631,15 @@ export default function Tracking() {
                     style={{ height: "100%", width: "100%" }}
                   >
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    {routeCoords.map((c, i) => (
-                      <Marker key={i} position={[c.lat, c.lng]}>
-                        <Popup>
-                          <b>{c.label}</b>
-                          <br />
-                          {c.address || (i === 0 ? booking?.origin : booking?.destination)}
-                          <br />
-                          <small className="text-xs text-muted-foreground">{c.lat.toFixed(6)}, {c.lng.toFixed(6)}</small>
-                        </Popup>
-                      </Marker>
-                    ))}
+                    <Marker position={[routeCoords[0].lat, routeCoords[0].lng]}>
+                      <Popup>
+                        <b>{routeCoords[0].label}</b>
+                        <br />
+                        {routeCoords[0].address || booking?.origin || booking?.destination}
+                        <br />
+                        <small className="text-xs text-muted-foreground">{routeCoords[0].lat.toFixed(6)}, {routeCoords[0].lng.toFixed(6)}</small>
+                      </Popup>
+                    </Marker>
                   </MapContainer>
                 ) : (
                   <MapContainer
@@ -575,22 +647,31 @@ export default function Tracking() {
                     style={{ height: "100%", width: "100%" }}
                   >
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    {routeCoords.map((c, i) => (
-                      <Marker key={i} position={[c.lat, c.lng]}>
-                        <Popup>
-                          <b>{c.label}</b>
-                          <br />
-                          {c.address || (i === 0 ? booking?.origin : booking?.destination)}
-                          <br />
-                          <small className="text-xs text-muted-foreground">{c.lat.toFixed(6)}, {c.lng.toFixed(6)}</small>
-                        </Popup>
-                      </Marker>
-                    ))}
                     {routeCoords.length > 1 && (
-                      <Polyline
-                        positions={routeCoords.map((c) => [c.lat, c.lng] as [number, number])}
-                        pathOptions={routeStyle(booking?.transport_mode)}
-                      />
+                      <>
+                        <Marker position={[routeCoords[0].lat, routeCoords[0].lng]}>
+                          <Popup>
+                            <b>Origin</b>
+                            <br />
+                            {routeCoords[0].address || booking?.origin}
+                            <br />
+                            <small className="text-xs text-muted-foreground">{routeCoords[0].lat.toFixed(6)}, {routeCoords[0].lng.toFixed(6)}</small>
+                          </Popup>
+                        </Marker>
+                        <Marker position={[routeCoords[routeCoords.length - 1].lat, routeCoords[routeCoords.length - 1].lng]}>
+                          <Popup>
+                            <b>Destination</b>
+                            <br />
+                            {routeCoords[routeCoords.length - 1].address || booking?.destination}
+                            <br />
+                            <small className="text-xs text-muted-foreground">{routeCoords[routeCoords.length - 1].lat.toFixed(6)}, {routeCoords[routeCoords.length - 1].lng.toFixed(6)}</small>
+                          </Popup>
+                        </Marker>
+                        <Polyline
+                          positions={routeCoords.map((c) => [c.lat, c.lng] as [number, number])}
+                          pathOptions={routeStyle(booking?.transport_mode)}
+                        />
+                      </>
                     )}
                   </MapContainer>
                 )}

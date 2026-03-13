@@ -91,6 +91,7 @@ export default function ProviderBookings() {
   const statusColor = (status: string) => {
     switch (status) {
       case "paid":
+      case "payment_completed":
       case "confirmed":
         return "default";
       case "in_transit":
@@ -151,7 +152,7 @@ export default function ProviderBookings() {
                     BK-{b.id.slice(0, 8).toUpperCase()}
                   </span>
                   <Badge variant={statusColor(b.status) as any} className="capitalize">
-                    {b.status}
+                    {b.status === "payment_completed" ? "paid" : b.status}
                   </Badge>
                 </CardTitle>
               </CardHeader>
@@ -187,7 +188,7 @@ export default function ProviderBookings() {
                   </div>
 
                   <div className="flex gap-2">
-                    {b.status === "paid" || b.status === "confirmed" || b.status === "in_transit" || b.status === "at_customs" ? (
+                    {b.status === "paid" || b.status === "payment_completed" || b.status === "confirmed" || b.status === "in_transit" || b.status === "at_customs" ? (
                       <Button size="sm" asChild>
                         <Link to={`/provider/tracking/${b.id}`}>
                           <Truck className="mr-2 h-4 w-4" />
@@ -204,7 +205,7 @@ export default function ProviderBookings() {
                     </Button>
 
                     <Button size="sm" variant="outline" asChild>
-                      <Link to={`/tracking/${b.id}`}>
+                      <Link to={`/provider/tracking/${b.id}`}>
                         Track
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
