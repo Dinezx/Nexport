@@ -415,7 +415,7 @@ export default function ProviderDashboard() {
                     >
                       <div className="flex flex-col lg:flex-row lg:items-start gap-6">
                         {/* Shipment Info */}
-                        <div className="flex-1 space-y-4">
+                        <div className="flex-1 min-w-0 space-y-4">
                           <div className="flex flex-wrap items-center gap-3">
                             <span className="font-mono text-sm font-bold text-foreground">
                               BK-{booking.id.slice(0, 8).toUpperCase()}
@@ -478,7 +478,7 @@ export default function ProviderDashboard() {
                         </div>
 
                         {/* Actions */}
-                        <div className="flex flex-row lg:flex-col gap-2">
+                        <div className="flex flex-row lg:flex-col gap-2 lg:items-end lg:min-w-[140px] self-start">
                           <Button
                             size="sm"
                             className="bg-primary hover:bg-primary/90 text-primary-foreground"
