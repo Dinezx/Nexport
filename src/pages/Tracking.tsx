@@ -484,8 +484,7 @@ export default function Tracking() {
     setSimActive(true);
     let progress = 0;
     const stepCount = 200; // points along the route
-    const startPt = routeCoords[0];
-    const endPt = routeCoords[routeCoords.length - 1];
+    const totalSegments = Math.max(1, routeCoords.length - 1);
 
     simTimer.current = setInterval(() => {
       if (gps) {
@@ -498,8 +497,13 @@ export default function Tracking() {
       }
 
       const t = (progress % stepCount) / (stepCount - 1);
-      const lat = startPt.lat + (endPt.lat - startPt.lat) * t;
-      const lng = startPt.lng + (endPt.lng - startPt.lng) * t;
+      const segFloat = t * totalSegments;
+      const segIdx = Math.min(totalSegments - 1, Math.floor(segFloat));
+      const segT = segFloat - segIdx;
+      const startPt = routeCoords[segIdx];
+      const endPt = routeCoords[segIdx + 1];
+      const lat = startPt.lat + (endPt.lat - startPt.lat) * segT;
+      const lng = startPt.lng + (endPt.lng - startPt.lng) * segT;
       const simPoint = { lat, lng, timestamp: new Date().toISOString() };
       setDisplayGps(simPoint);
       setLivePath((prev) => [...prev.slice(-99), { lat, lng }]);

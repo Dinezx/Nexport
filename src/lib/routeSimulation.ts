@@ -97,6 +97,42 @@ const KNOWN_LOCATIONS: Record<string, GPS> = {
   "melbourne": { lat: -37.8136, lng: 144.9631 },
 };
 
+const isSeaPortName = (name: string): boolean => {
+  const lower = name.toLowerCase();
+  if (lower.includes("airport") || lower.includes("icd")) return false;
+  return /\bport\b|harbour|harbor|terminal|jetty|seaport/.test(lower);
+};
+
+const SEA_PORTS = Object.entries(KNOWN_LOCATIONS)
+  .filter(([key]) => isSeaPortName(key))
+  .map(([name, coord]) => ({ name, coord }));
+
+const haversineKm = (a: GPS, b: GPS) => {
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s1 = Math.sin(dLat / 2) ** 2;
+  const s2 = Math.sin(dLng / 2) ** 2;
+  const c1 = Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat));
+  const c2 = s1 + c1 * s2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(c2)));
+};
+
+const nearestSeaPort = (point: GPS): GPS | null => {
+  if (!SEA_PORTS.length) return null;
+  let best = SEA_PORTS[0];
+  let bestDist = haversineKm(point, SEA_PORTS[0].coord);
+  for (let i = 1; i < SEA_PORTS.length; i += 1) {
+    const entry = SEA_PORTS[i];
+    const dist = haversineKm(point, entry.coord);
+    if (dist < bestDist) {
+      best = entry;
+      bestDist = dist;
+    }
+  }
+  return best.coord;
+};
+
 /**
  * Lookup a location name in the known locations database.
  * Tries exact match first, then progressively simpler substrings.
@@ -195,6 +231,18 @@ const greatCirclePoints = (start: GPS, end: GPS, steps: number): RoutePoint[] =>
   return points;
 };
 
+const buildCurvePoints = (start: GPS, control: GPS, end: GPS, steps: number): RoutePoint[] => {
+  const points: RoutePoint[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const mt = 1 - t;
+    const lat = mt * mt * start.lat + 2 * mt * t * control.lat + t * t * end.lat;
+    const lng = mt * mt * start.lng + 2 * mt * t * control.lng + t * t * end.lng;
+    points.push({ lat, lng, label: `Leg ${i}` });
+  }
+  return points;
+};
+
 export const buildRoutePoints = (
   origin: string,
   destination: string,
@@ -212,15 +260,41 @@ export const buildModeRoutePoints = (
   startOverride?: GPS,
   endOverride?: GPS,
 ): RoutePoint[] => {
-  const start = startOverride ?? pseudoCoordFromName(origin);
-  const end = endOverride ?? pseudoCoordFromName(destination);
   const m = (mode || "").toLowerCase();
+
+  let start = startOverride ?? pseudoCoordFromName(origin);
+  let end = endOverride ?? pseudoCoordFromName(destination);
+
+  if (m === "sea" || m === "ocean" || m === "ship") {
+    if (!isSeaPortName(origin)) {
+      const port = nearestSeaPort(start);
+      if (port) start = port;
+    }
+    if (!isSeaPortName(destination)) {
+      const port = nearestSeaPort(end);
+      if (port) end = port;
+    }
+  }
 
   let steps = 24;
   if (m === "air") steps = 40;
   else if (m === "sea" || m === "ocean" || m === "ship") steps = 32;
   else if (m === "rail" || m === "railway" || m === "train") steps = 28;
   else if (m === "road" || m === "truck") steps = 24;
+
+  if (m === "sea" || m === "ocean" || m === "ship") {
+    const midLat = (start.lat + end.lat) / 2;
+    const midLng = (start.lng + end.lng) / 2;
+    const latOffset = Math.abs(start.lat) + Math.abs(end.lat) > 10
+      ? (start.lat + end.lat) / 2 > 0 ? -6 : 6
+      : -4;
+    const control = { lat: midLat + latOffset, lng: midLng };
+    const curve = buildCurvePoints(start, control, end, steps);
+    return curve.map((p, i) => ({
+      ...p,
+      label: i === 0 ? "Origin" : i === curve.length - 1 ? "Destination" : p.label,
+    }));
+  }
 
   return greatCirclePoints(start, end, steps);
 };
