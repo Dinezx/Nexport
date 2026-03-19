@@ -306,7 +306,7 @@ export default function ProviderDashboard() {
             <h1 className="text-3xl font-bold text-foreground">Provider Dashboard</h1>
             <p className="text-muted-foreground">Manage your containers and shipments — live data.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap xl:justify-end xl:ml-auto">
             <Button
               variant="outline"
               size="sm"
@@ -329,7 +329,7 @@ export default function ProviderDashboard() {
                 Manage Containers
               </Link>
             </Button>
-            <div className="flex items-center gap-3 rounded-full border border-border bg-card px-3 py-1.5 shadow-sm">
+            <div className="flex items-center gap-3 rounded-full border border-border bg-card px-3 py-1.5 shadow-sm xl:ml-4">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
                 {user?.role ? user.role.slice(0, 1).toUpperCase() : "P"}
               </div>

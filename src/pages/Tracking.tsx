@@ -56,6 +56,7 @@ export default function Tracking() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [routeSource, setRouteSource] = useState<"ors" | "mode" | "simulated" | "none">("none");
   const orsKey = import.meta.env.VITE_ORS_API_KEY as string | undefined;
 
   type DocType = DocumentType;
@@ -383,34 +384,42 @@ export default function Tracking() {
       if (dc) coords.push({ ...dc, label: "Destination", address: d });
 
       // If geocoding failed, fall back to simulated route points
-      if (coords.length >= 2) {
-        const transport = (booking?.transport_mode || "").toLowerCase();
-        if (transport === "road" && orsKey) {
-          try {
-            const start = coords[0];
-            const end = coords[coords.length - 1];
-            const res = await fetch(
-              `https://api.openrouteservice.org/v2/directions/driving-car?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}`,
-              { headers: { Authorization: orsKey } }
-            );
-            if (res.ok) {
-              const data = await res.json();
-              const coordsRaw = data?.features?.[0]?.geometry?.coordinates ?? [];
-              if (coordsRaw.length > 1) {
-                const roadPath = coordsRaw.map((pair: number[], i: number) => ({
-                  lat: pair[1],
-                  lng: pair[0],
-                  label: i === 0 ? "Origin" : i === coordsRaw.length - 1 ? "Destination" : `Leg ${i}`,
-                  address: i === 0 ? o : i === coordsRaw.length - 1 ? d : undefined,
-                }));
-                setRouteCoords(roadPath);
-                return;
-              }
+      const transport = (booking?.transport_mode || "").toLowerCase();
+
+      const tryOrs = async (start: RoutePoint, end: RoutePoint) => {
+        if (transport !== "road" || !orsKey) return false;
+        try {
+          const res = await fetch(
+            `https://api.openrouteservice.org/v2/directions/driving-car?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}`,
+            { headers: { Authorization: orsKey } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const coordsRaw = data?.features?.[0]?.geometry?.coordinates ?? [];
+            if (coordsRaw.length > 1) {
+              const roadPath = coordsRaw.map((pair: number[], i: number) => ({
+                lat: pair[1],
+                lng: pair[0],
+                label: i === 0 ? "Origin" : i === coordsRaw.length - 1 ? "Destination" : `Leg ${i}`,
+                address: i === 0 ? o : i === coordsRaw.length - 1 ? d : undefined,
+              }));
+              setRouteCoords(roadPath);
+              setRouteSource("ors");
+              return true;
             }
-          } catch (err) {
-            console.warn("OpenRouteService route failed", err);
+          } else {
+            const text = await res.text();
+            console.warn("OpenRouteService route failed", res.status, text.slice(0, 200));
           }
+        } catch (err) {
+          console.warn("OpenRouteService route failed", err);
         }
+        return false;
+      };
+
+      if (coords.length >= 2) {
+        const usedOrs = await tryOrs(coords[0], coords[coords.length - 1]);
+        if (usedOrs) return;
 
         const modePath = buildModeRoutePoints(o, d, booking?.transport_mode, coords[0], coords[coords.length - 1]);
         const labeled = modePath.map((p, i) => ({
@@ -420,7 +429,17 @@ export default function Tracking() {
         }));
         console.debug("Geocoded mode path:", labeled);
         setRouteCoords(labeled);
+        setRouteSource("mode");
       } else {
+        const fallbackStart = lookupKnownLocation(o);
+        const fallbackEnd = lookupKnownLocation(d);
+        if (fallbackStart && fallbackEnd) {
+          const usedOrs = await tryOrs(
+            { ...fallbackStart, label: "Origin", address: o },
+            { ...fallbackEnd, label: "Destination", address: d }
+          );
+          if (usedOrs) return;
+        }
         console.warn("Nominatim geocoding failed, using simulated route");
         const simPoints = buildModeRoutePoints(o, d, booking?.transport_mode);
         const labeled = simPoints.map((p, i) => ({
@@ -429,6 +448,7 @@ export default function Tracking() {
           address: i === 0 ? o : i === simPoints.length - 1 ? d : undefined,
         }));
         setRouteCoords(labeled);
+        setRouteSource("simulated");
       }
     })();
   }, [booking, gps]);
@@ -674,7 +694,12 @@ export default function Tracking() {
         {!gps && routeCoords.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Route Map</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Route Map</CardTitle>
+                <span className="text-xs text-muted-foreground">
+                  {routeSource === "ors" ? "Road: ORS" : routeSource === "mode" ? "Mode route" : "Simulated"}
+                </span>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="h-[350px] rounded-lg overflow-hidden">
