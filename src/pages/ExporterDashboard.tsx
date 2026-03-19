@@ -84,6 +84,46 @@ export default function ExporterDashboard() {
   const [trackingMap, setTrackingMap] = useState<Record<string, TrackingEvent[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [profileName, setProfileName] = useState<string>("");
+  const [companyName, setCompanyName] = useState<string>("");
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!user?.id) return;
+
+      const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!);
+      if (online) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("name, company")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (data?.name || data?.company) {
+          setProfileName(data?.name ?? "");
+          setCompanyName(data?.company ?? "");
+          return;
+        }
+      }
+
+      const storageKey = user?.id ? `nexport.settings.${user.id}` : "";
+      if (storageKey) {
+        try {
+          const raw = localStorage.getItem(storageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as { profile?: { contactName?: string; companyName?: string } };
+            setProfileName(parsed.profile?.contactName ?? "");
+            setCompanyName(parsed.profile?.companyName ?? "");
+          }
+        } catch {
+          setProfileName("");
+          setCompanyName("");
+        }
+      }
+    };
+
+    loadProfile();
+  }, [user?.id]);
 
   /* ---- fetch ---- */
   const fetchData = async () => {
@@ -199,7 +239,7 @@ export default function ExporterDashboard() {
               Welcome back! Here's your logistics overview.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -214,11 +254,25 @@ export default function ExporterDashboard() {
               asChild
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              <Link to="/booking">
+              <Link to="/booking?new=1">
                 New Booking
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
+            <div className="flex items-center gap-3 rounded-full border border-border bg-card px-3 py-1.5 shadow-sm">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
+                {user?.role ? user.role.slice(0, 1).toUpperCase() : "E"}
+              </div>
+              <div className="text-left">
+                <p className="text-xs text-muted-foreground">Signed in as</p>
+                <p className="text-sm font-medium text-foreground">
+                  {profileName || companyName || (user?.id ? `ID ${user.id.slice(0, 6)}` : "Exporter")}
+                </p>
+              </div>
+              <Button asChild size="sm" variant="outline" className="border-border">
+                <Link to="/profile">Profile</Link>
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -237,6 +291,7 @@ export default function ExporterDashboard() {
             change={`${inTransit.length} in transit`}
             changeType={inTransit.length > 0 ? "positive" : "neutral"}
             icon={Truck}
+            variant="default"
             className="animate-fade-in-up opacity-0"
             style={{ animationDelay: "0ms" }}
           />
@@ -246,6 +301,7 @@ export default function ExporterDashboard() {
             change={`${completedBookings.length} completed`}
             changeType="positive"
             icon={Package}
+            variant="default"
             className="animate-fade-in-up opacity-0"
             style={{ animationDelay: "100ms" }}
           />
@@ -255,6 +311,7 @@ export default function ExporterDashboard() {
             change="Live tracking"
             changeType="neutral"
             icon={Clock}
+            variant="default"
             className="animate-fade-in-up opacity-0"
             style={{ animationDelay: "200ms" }}
           />
@@ -264,6 +321,7 @@ export default function ExporterDashboard() {
             change={`${bookings.filter((b) => b.status === "paid").length} pending shipment`}
             changeType="neutral"
             icon={TrendingUp}
+            variant="default"
             className="animate-fade-in-up opacity-0"
             style={{ animationDelay: "300ms" }}
           />

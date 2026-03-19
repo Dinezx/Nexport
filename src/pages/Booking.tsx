@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { getOfflineSession, isSupabaseReachable } from "@/lib/offlineAuth";
 import { saveOfflineBooking } from "@/services/bookingService";
 import { predictEtaAndRisk } from "@/lib/prediction";
@@ -1184,6 +1184,7 @@ function calculatePriceINR(form: any) {
 
 export default function Booking() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -1202,6 +1203,20 @@ export default function Booking() {
   } | null>(null);
   const [delayRiskLabel, setDelayRiskLabel] = useState<string | null>(null);
 
+  const defaultForm = {
+    booking_date: "",
+    origin: "",
+    destination: "",
+    transport: "sea",
+    cargo_type: "",
+    cargo_weight: "",
+    container_type: "",
+    container_size: "",
+    booking_mode: "full" as "full" | "partial",
+    space_cbm: "",
+    selected_container_id: "",
+  };
+
   const [form, setForm] = useState<{
     booking_date: string;
     origin: string;
@@ -1214,19 +1229,7 @@ export default function Booking() {
     booking_mode: "full" | "partial";
     space_cbm: string;
     selected_container_id: string;
-  }>({
-    booking_date: "",
-    origin: "",
-    destination: "",
-    transport: "sea",
-    cargo_type: "",
-    cargo_weight: "",
-    container_type: "",
-    container_size: "",
-    booking_mode: "full",
-    space_cbm: "",
-    selected_container_id: "",
-  });
+  }>(defaultForm);
 
   const [availableContainers, setAvailableContainers] = useState<any[]>([]);
   const [loadingContainers, setLoadingContainers] = useState(false);
@@ -1238,8 +1241,23 @@ export default function Booking() {
     factors: string[];
   } | null>(null);
 
-  // Load draft on mount
+  // Load draft on mount (unless explicitly starting a new booking)
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const forceNew = params.get("new") === "1";
+
+    if (forceNew) {
+      try {
+        localStorage.removeItem(BOOKING_DRAFT_KEY);
+      } catch (err) {
+        console.warn("Booking draft clear failed", err);
+      }
+      setForm(defaultForm);
+      setStep(1);
+      navigate("/booking", { replace: true });
+      return;
+    }
+
     try {
       const raw = localStorage.getItem(BOOKING_DRAFT_KEY);
       if (raw) {
@@ -1249,7 +1267,7 @@ export default function Booking() {
     } catch (err) {
       console.warn("Booking draft load failed", err);
     }
-  }, []);
+  }, [location.search, navigate]);
 
   // Persist draft whenever the form changes
   useEffect(() => {

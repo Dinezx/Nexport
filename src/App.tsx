@@ -15,6 +15,7 @@ import ProviderBookings from "./pages/ProviderBookings";
 import ExporterBookings from "./pages/ExporterBookings";
 import MockPayment from "./pages/MockPayment";
 import Settings from "./pages/Settings";
+import Profile from "./pages/Profile";
 import Landing from "./pages/Landing";
 import ProtectedRoute from "./components/ProtectedRoute";
 import ContainerMarketplace from "./pages/ContainerMarketplace";
@@ -86,6 +87,14 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={["exporter", "provider", "admin"]}>
               <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute allowedRoles={["exporter", "provider", "admin"]}>
+              <Profile />
             </ProtectedRoute>
           }
         />

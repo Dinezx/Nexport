@@ -57,7 +57,7 @@ export function StatCard({
   // Default light variant (original design)
   return (
     <div style={style} className={cn(
-      "rounded-xl border bg-card text-card-foreground shadow-card hover:shadow-card-hover transition-all duration-300 p-6 hover:-translate-y-1 group",
+      "rounded-xl border border-border/70 bg-card text-card-foreground shadow-card hover:shadow-card-hover transition-all duration-300 p-6 hover:-translate-y-1 group",
       className
     )}>
       <div className="flex items-start justify-between">

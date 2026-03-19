@@ -27,6 +27,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { calculateProviderScore } from "@/services/providerScore";
 import { predictContainerDemand } from "@/ml/demandPredictor";
+import { isSupabaseReachable } from "@/lib/offlineAuth";
 
 /* ---------- types ---------- */
 
@@ -89,6 +90,46 @@ export default function ProviderDashboard() {
   const [providerScore, setProviderScore] = useState<{ score: number; band: string } | null>(null);
   const [demandPrediction, setDemandPrediction] = useState<{ level: string; route: string } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [profileName, setProfileName] = useState<string>("");
+  const [companyName, setCompanyName] = useState<string>("");
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!user?.id) return;
+
+      const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!);
+      if (online) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("name, company")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (data?.name || data?.company) {
+          setProfileName(data?.name ?? "");
+          setCompanyName(data?.company ?? "");
+          return;
+        }
+      }
+
+      const storageKey = user?.id ? `nexport.settings.${user.id}` : "";
+      if (storageKey) {
+        try {
+          const raw = localStorage.getItem(storageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as { profile?: { contactName?: string; companyName?: string } };
+            setProfileName(parsed.profile?.contactName ?? "");
+            setCompanyName(parsed.profile?.companyName ?? "");
+          }
+        } catch {
+          setProfileName("");
+          setCompanyName("");
+        }
+      }
+    };
+
+    loadProfile();
+  }, [user?.id]);
 
   /* ---- fetch ---- */
   const fetchData = async () => {
@@ -265,7 +306,7 @@ export default function ProviderDashboard() {
             <h1 className="text-3xl font-bold text-foreground">Provider Dashboard</h1>
             <p className="text-muted-foreground">Manage your containers and shipments — live data.</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
               size="sm"
@@ -288,6 +329,20 @@ export default function ProviderDashboard() {
                 Manage Containers
               </Link>
             </Button>
+            <div className="flex items-center gap-3 rounded-full border border-border bg-card px-3 py-1.5 shadow-sm">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
+                {user?.role ? user.role.slice(0, 1).toUpperCase() : "P"}
+              </div>
+              <div className="text-left">
+                <p className="text-xs text-muted-foreground">Signed in as</p>
+                <p className="text-sm font-medium text-foreground">
+                  {profileName || companyName || (user?.id ? `ID ${user.id.slice(0, 6)}` : "Provider")}
+                </p>
+              </div>
+              <Button asChild size="sm" variant="outline" className="border-border">
+                <Link to="/profile">Profile</Link>
+              </Button>
+            </div>
           </div>
         </div>
 

@@ -15,6 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
+import { isSupabaseReachable } from "@/lib/offlineAuth";
 
 type UserRole = "exporter" | "provider" | "admin";
 
@@ -143,29 +145,68 @@ export default function Settings() {
   const [saveState, setSaveState] = useState<"idle" | "saved" | "error">("idle");
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
-  const loadSettings = () => {
+  const loadSettings = async () => {
+    let nextForm = defaultSettings;
+
     const raw = localStorage.getItem(storageKey);
-    if (!raw) {
-      setForm(defaultSettings);
-      return;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as Partial<SettingsForm>;
+        nextForm = mergeSettings(defaultSettings, parsed);
+      } catch {
+        nextForm = defaultSettings;
+      }
     }
 
-    try {
-      const parsed = JSON.parse(raw) as Partial<SettingsForm>;
-      setForm(mergeSettings(defaultSettings, parsed));
-    } catch {
-      setForm(defaultSettings);
+    if (user?.id) {
+      const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!);
+      if (online) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("name, company, email")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (data) {
+          nextForm = mergeSettings(nextForm, {
+            profile: {
+              contactName: data.name || nextForm.profile.contactName,
+              companyName: data.company || nextForm.profile.companyName,
+              email: data.email || nextForm.profile.email,
+            },
+          });
+        }
+      }
     }
+
+    setForm(nextForm);
   };
 
   useEffect(() => {
     loadSettings();
-  }, [storageKey]);
+  }, [storageKey, user?.id]);
 
-  const handleSave = (event: React.FormEvent) => {
+  const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
       localStorage.setItem(storageKey, JSON.stringify(form));
+
+      if (user?.id) {
+        const online = await isSupabaseReachable(import.meta.env.VITE_SUPABASE_URL!);
+        if (online) {
+          await supabase.from("profiles").upsert(
+            {
+              id: user.id,
+              role,
+              name: form.profile.contactName,
+              company: form.profile.companyName,
+              email: form.profile.email || null,
+            },
+            { onConflict: "id" }
+          );
+        }
+      }
+
       setLastSaved(new Date());
       setSaveState("saved");
       window.setTimeout(() => setSaveState("idle"), 2000);
