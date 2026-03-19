@@ -56,6 +56,7 @@ export default function Tracking() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const orsKey = import.meta.env.VITE_ORS_API_KEY as string | undefined;
 
   type DocType = DocumentType;
   const docTypes: { key: DocType; label: string }[] = [
@@ -383,6 +384,34 @@ export default function Tracking() {
 
       // If geocoding failed, fall back to simulated route points
       if (coords.length >= 2) {
+        const transport = (booking?.transport_mode || "").toLowerCase();
+        if (transport === "road" && orsKey) {
+          try {
+            const start = coords[0];
+            const end = coords[coords.length - 1];
+            const res = await fetch(
+              `https://api.openrouteservice.org/v2/directions/driving-car?start=${start.lng},${start.lat}&end=${end.lng},${end.lat}`,
+              { headers: { Authorization: orsKey } }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              const coordsRaw = data?.features?.[0]?.geometry?.coordinates ?? [];
+              if (coordsRaw.length > 1) {
+                const roadPath = coordsRaw.map((pair: number[], i: number) => ({
+                  lat: pair[1],
+                  lng: pair[0],
+                  label: i === 0 ? "Origin" : i === coordsRaw.length - 1 ? "Destination" : `Leg ${i}`,
+                  address: i === 0 ? o : i === coordsRaw.length - 1 ? d : undefined,
+                }));
+                setRouteCoords(roadPath);
+                return;
+              }
+            }
+          } catch (err) {
+            console.warn("OpenRouteService route failed", err);
+          }
+        }
+
         const modePath = buildModeRoutePoints(o, d, booking?.transport_mode, coords[0], coords[coords.length - 1]);
         const labeled = modePath.map((p, i) => ({
           ...p,
