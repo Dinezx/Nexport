@@ -212,7 +212,9 @@ export default function Settings() {
         <Tabs defaultValue="profile" className="space-y-4">
           <TabsList className="w-full justify-start">
             <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="operations">Operations</TabsTrigger>
+            <TabsTrigger value="operations">
+              {role === "provider" ? "Provider Ops" : role === "exporter" ? "Exporter Ops" : "Operations"}
+            </TabsTrigger>
             <TabsTrigger value="billing">Billing</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
@@ -448,74 +450,10 @@ export default function Settings() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Logistics Preferences</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Primary Transport Mode</Label>
-                  <Select
-                    value={form.preferences.transportMode}
-                    onValueChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        preferences: { ...prev.preferences, transportMode: value },
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sea">Sea</SelectItem>
-                      <SelectItem value="air">Air</SelectItem>
-                      <SelectItem value="road">Road</SelectItem>
-                      <SelectItem value="rail">Rail</SelectItem>
-                      <SelectItem value="multimodal">Multimodal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Priority</Label>
-                  <Select
-                    value={form.preferences.priority}
-                    onValueChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        preferences: { ...prev.preferences, priority: value },
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select priority" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cost">Cost Focused</SelectItem>
-                      <SelectItem value="balanced">Balanced</SelectItem>
-                      <SelectItem value="speed">Speed Focused</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-between sm:col-span-2">
-                  <Label>Insurance Required</Label>
-                  <Switch
-                    checked={form.preferences.insuranceRequired}
-                    onCheckedChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        preferences: { ...prev.preferences, insuranceRequired: value },
-                      }))
-                    }
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
             {role === "exporter" && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Exporter Details</CardTitle>
+                  <CardTitle>Exporter Operations</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
@@ -582,7 +520,7 @@ export default function Settings() {
             {role === "provider" && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Provider Details</CardTitle>
+                  <CardTitle>Provider Operations</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -627,6 +565,70 @@ export default function Settings() {
                 </CardContent>
               </Card>
             )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Logistics Preferences</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Primary Transport Mode</Label>
+                  <Select
+                    value={form.preferences.transportMode}
+                    onValueChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        preferences: { ...prev.preferences, transportMode: value },
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sea">Sea</SelectItem>
+                      <SelectItem value="air">Air</SelectItem>
+                      <SelectItem value="road">Road</SelectItem>
+                      <SelectItem value="rail">Rail</SelectItem>
+                      <SelectItem value="multimodal">Multimodal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Priority</Label>
+                  <Select
+                    value={form.preferences.priority}
+                    onValueChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        preferences: { ...prev.preferences, priority: value },
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cost">Cost Focused</SelectItem>
+                      <SelectItem value="balanced">Balanced</SelectItem>
+                      <SelectItem value="speed">Speed Focused</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center justify-between sm:col-span-2">
+                  <Label>Insurance Required</Label>
+                  <Switch
+                    checked={form.preferences.insuranceRequired}
+                    onCheckedChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        preferences: { ...prev.preferences, insuranceRequired: value },
+                      }))
+                    }
+                  />
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="billing" className="space-y-6">
