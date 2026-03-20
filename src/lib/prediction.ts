@@ -150,10 +150,13 @@ export const predictEtaAndRisk = (params: {
   const destCountry = destLoc?.country ?? getCountry(params.destination);
   const isDomestic = originCountry === destCountry;
 
-  // ── Port/terminal handling (reduced for domestic) ──
+  // ── Port/terminal handling (reduced for domestic, minimal for road) ──
   let originHandling = getPortHandlingDays(originCongestion, originType);
   let destHandling = getPortHandlingDays(destCongestion, destType);
-  if (isDomestic) {
+  if (params.transport === "road") {
+    originHandling = isDomestic ? 0.2 : Math.min(0.6, originHandling * 0.3);
+    destHandling = isDomestic ? 0.2 : Math.min(0.6, destHandling * 0.3);
+  } else if (isDomestic) {
     // Domestic routes have simpler handling — no international procedures
     originHandling *= 0.4;
     destHandling *= 0.4;
@@ -181,7 +184,40 @@ export const predictEtaAndRisk = (params: {
   } else {
     // Calculate from physics + data
     const speed = TRANSPORT_SPEEDS[params.transport];
-    const effectiveSpeed = speed.avgKmPerDay;
+    let effectiveSpeed = speed.avgKmPerDay;
+    if (params.transport === "road") {
+      if (distanceKm > 1600) {
+        effectiveSpeed = 500;
+      } else if (distanceKm > 900) {
+        effectiveSpeed = 420;
+      } else if (distanceKm > 400) {
+        effectiveSpeed = 320;
+      } else {
+        effectiveSpeed = 260;
+      }
+    }
+    if (params.transport === "air") {
+      if (distanceKm > 4000) {
+        effectiveSpeed = 9000;
+      } else if (distanceKm > 2000) {
+        effectiveSpeed = 8000;
+      } else if (distanceKm > 800) {
+        effectiveSpeed = 6500;
+      } else {
+        effectiveSpeed = 5000;
+      }
+    }
+    if (params.transport === "sea") {
+      if (distanceKm > 9000) {
+        effectiveSpeed = 700;
+      } else if (distanceKm > 5000) {
+        effectiveSpeed = 620;
+      } else if (distanceKm > 2000) {
+        effectiveSpeed = 520;
+      } else {
+        effectiveSpeed = 420;
+      }
+    }
     transitDays = (distanceKm / effectiveSpeed) * weatherFactor;
     etaDays = Math.round(transitDays + originHandling + destHandling + totalCustoms);
     confidence = originLoc && destLoc ? "medium" : "low";
@@ -189,7 +225,7 @@ export const predictEtaAndRisk = (params: {
 
   // ── LCL/partial consolidation extra ──
   if (params.bookingMode === "partial") {
-    const lclExtra = params.cbm > 15 ? 2 : 1;
+    const lclExtra = params.transport === "road" ? 0.5 : params.cbm > 15 ? 2 : 1;
     etaDays += lclExtra;
   }
 

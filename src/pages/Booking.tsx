@@ -1221,175 +1221,364 @@ export default function Booking() {
   };
 
   const [form, setForm] = useState<{
-    useEffect(() => {
-      if (step !== 4) return;
-      if (!form.origin || !form.destination || !form.transport) return;
+    booking_date: string;
+    origin: string;
+    destination: string;
+    transport: string;
+    cargo_type: string;
+    cargo_weight: string;
+    container_type: string;
+    container_size: string;
+    booking_mode: "full" | "partial";
+    space_cbm: string;
+    selected_container_id: string;
+  }>(defaultForm);
 
-      const normalize = (value: string) => value.toLowerCase().trim();
-      const findLocation = (name: string) => {
-        if (LOCATION_COORDS[name]) return LOCATION_COORDS[name];
-        const lower = normalize(name);
-        const city = lower.split(",")[0].split(" ")[0];
-        let best: { coord: any; score: number } | null = null;
-        for (const [key, coord] of Object.entries(LOCATION_COORDS)) {
-          const kLower = key.toLowerCase();
-          let score = 0;
-          if (kLower.includes(lower) || lower.includes(kLower)) score += 6;
-          if (kLower.includes(city)) score += 3;
-          if (score > 0 && (!best || score > best.score)) {
-            best = { coord, score };
-          }
-        }
-        return best?.coord ?? null;
-      };
+  const [availableContainers, setAvailableContainers] = useState<any[]>([]);
+  const [loadingContainers, setLoadingContainers] = useState(false);
+  const [containerAdvice, setContainerAdvice] = useState<ContainerSuggestion | null>(null);
+  const [delayInsight, setDelayInsight] = useState<{
+    probability: number;
+    label: DelayRiskLevel;
+    expectedEtaDays: number;
+    factors: string[];
+  } | null>(null);
 
-      const geocodeNominatim = async (q: string): Promise<{ lat: number; lng: number } | null> => {
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
-            { referrerPolicy: "no-referrer" }
-          );
-          if (!res.ok) return null;
-          const json = await res.json();
-          if (json && json.length > 0) {
-            return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon) };
-          }
-        } catch {
-          return null;
+  // Load draft on mount (unless explicitly starting a new booking)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const forceNew = params.get("new") === "1";
+
+    if (forceNew) {
+      try {
+        localStorage.removeItem(BOOKING_DRAFT_KEY);
+      } catch (err) {
+        console.warn("Booking draft clear failed", err);
+      }
+      setForm(defaultForm);
+      setStep(1);
+      navigate("/booking", { replace: true });
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(BOOKING_DRAFT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setForm((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch (err) {
+      console.warn("Booking draft load failed", err);
+    }
+  }, [location.search, navigate]);
+
+  // Persist draft whenever the form changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOOKING_DRAFT_KEY, JSON.stringify(form));
+    } catch (err) {
+      console.warn("Booking draft save failed", err);
+    }
+  }, [form]);
+
+  const isValidLocationForMode = (mode: string, value: string) => {
+    if (!value) return false;
+    const inList = LOCATIONS.includes(value);
+    const lower = value.toLowerCase();
+    if (mode === "sea") return inList && lower.includes("port");
+    if (mode === "air") return inList && lower.includes("airport");
+    if (mode === "road") return inList && lower.includes("icd");
+    return inList;
+  };
+
+  useEffect(() => {
+    if (!form.origin || !form.destination || !form.transport) return;
+    const validOrigin = isValidLocationForMode(form.transport, form.origin);
+    const validDestination = isValidLocationForMode(form.transport, form.destination);
+    if (!validOrigin || !validDestination || form.origin === form.destination) return;
+
+    const normalize = (value: string) => value.toLowerCase().trim();
+    const findLocation = (name: string) => {
+      if (LOCATION_COORDS[name]) return LOCATION_COORDS[name];
+      const lower = normalize(name);
+      const city = lower.split(",")[0].split(" ")[0];
+      let best: { coord: any; score: number } | null = null;
+      for (const [key, coord] of Object.entries(LOCATION_COORDS)) {
+        const kLower = key.toLowerCase();
+        let score = 0;
+        if (kLower.includes(lower) || lower.includes(kLower)) score += 6;
+        if (kLower.includes(city)) score += 3;
+        if (score > 0 && (!best || score > best.score)) {
+          best = { coord, score };
         }
+      }
+      return best?.coord ?? null;
+    };
+
+    const geocodeNominatim = async (q: string): Promise<{ lat: number; lng: number } | null> => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
+          { referrerPolicy: "no-referrer" }
+        );
+        if (!res.ok) return null;
+        const json = await res.json();
+        if (json && json.length > 0) {
+          return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon) };
+        }
+      } catch {
         return null;
-      };
+      }
+      return null;
+    };
 
-      const fetchAirportCoords = async (query: string) => {
-        if (!aviationKey) return null;
-        const q = query
-          .replace(/international|airport|terminal/gi, "")
-          .replace(/\s*ICD\b/gi, "")
-          .replace(/,\s*[^,]+$/, "")
-          .trim();
-        if (!q) return null;
-        try {
-          const res = await fetch(
-            `https://api.aviationstack.com/v1/airports?access_key=${encodeURIComponent(aviationKey)}&search=${encodeURIComponent(q)}`
-          );
-          if (!res.ok) return null;
-          const data = await res.json();
-          const hit = data?.data?.[0];
-          if (hit?.latitude && hit?.longitude) {
-            return { lat: Number(hit.latitude), lng: Number(hit.longitude) };
-          }
-        } catch {
-          return null;
+    const fetchAirportCoords = async (query: string) => {
+      if (!aviationKey) return null;
+      const q = query
+        .replace(/international|airport|terminal/gi, "")
+        .replace(/\s*ICD\b/gi, "")
+        .replace(/,\s*[^,]+$/, "")
+        .trim();
+      if (!q) return null;
+      try {
+        const res = await fetch(
+          `https://api.aviationstack.com/v1/airports?access_key=${encodeURIComponent(aviationKey)}&search=${encodeURIComponent(q)}`
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        const hit = data?.data?.[0];
+        if (hit?.latitude && hit?.longitude) {
+          return { lat: Number(hit.latitude), lng: Number(hit.longitude) };
         }
+      } catch {
         return null;
-      };
+      }
+      return null;
+    };
 
-      const fetchRoadDistanceKm = async (o: { lat: number; lng: number }, d: { lat: number; lng: number }) => {
-        if (!orsKey) return null;
-        try {
-          const res = await fetch(
-            `https://api.openrouteservice.org/v2/directions/driving-car?start=${o.lng},${o.lat}&end=${d.lng},${d.lat}`,
-            { headers: { Authorization: orsKey } }
-          );
-          if (!res.ok) return null;
-          const data = await res.json();
-          const meters = data?.features?.[0]?.properties?.summary?.distance;
-          if (typeof meters === "number" && meters > 0) return meters / 1000;
-        } catch {
-          return null;
+    const fetchRoadDistanceKm = async (o: { lat: number; lng: number }, d: { lat: number; lng: number }) => {
+      if (!orsKey) return null;
+      try {
+        const res = await fetch(
+          `https://api.openrouteservice.org/v2/directions/driving-car?start=${o.lng},${o.lat}&end=${d.lng},${d.lat}`,
+          { headers: { Authorization: orsKey } }
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        const meters = data?.features?.[0]?.properties?.summary?.distance;
+        if (typeof meters === "number" && meters > 0) return meters / 1000;
+      } catch {
+        return null;
+      }
+      return null;
+    };
+
+    const run = async () => {
+      setLoading(true);
+      try {
+        const transport = form.transport as "sea" | "road" | "air";
+        let distanceKm: number | undefined;
+
+        if (transport === "road") {
+          const oKnown = findLocation(form.origin);
+          const dKnown = findLocation(form.destination);
+          const o = oKnown ? { lat: oKnown.lat, lng: oKnown.lng } : await geocodeNominatim(form.origin);
+          const d = dKnown ? { lat: dKnown.lat, lng: dKnown.lng } : await geocodeNominatim(form.destination);
+          if (o && d) {
+            distanceKm = await fetchRoadDistanceKm(o, d) ?? haversineDistanceKm(o.lat, o.lng, d.lat, d.lng) * 1.3;
+          }
         }
-        return null;
-      };
 
-      const run = async () => {
-        setLoading(true);
+        if (transport === "air" && distanceKm === undefined) {
+          const o = await fetchAirportCoords(form.origin);
+          const d = await fetchAirportCoords(form.destination);
+          if (o && d) {
+            distanceKm = haversineDistanceKm(o.lat, o.lng, d.lat, d.lng);
+          }
+        }
+
+        if (transport === "sea" && distanceKm === undefined) {
+          const oKnown = findLocation(form.origin);
+          const dKnown = findLocation(form.destination);
+          if (oKnown && dKnown) {
+            const gc = haversineDistanceKm(oKnown.lat, oKnown.lng, dKnown.lat, dKnown.lng);
+            distanceKm = gc * getSeaRouteMultiplier(form.origin, form.destination);
+          }
+        }
+
+        const result = predictEtaAndRisk({
+          origin: form.origin,
+          destination: form.destination,
+          transport,
+          bookingMode: form.booking_mode,
+          cbm: Number(form.space_cbm) || 0,
+          distanceKm,
+        });
+
+        setEtaDays(result.etaDays);
+        setEtaConfidence(result.etaConfidence);
+        setEtaRange(result.etaRange);
+        setDelayRisk(result.delayRisk);
+        setDelayReason(result.delayReason);
+        setEtaBreakdown(result.breakdown);
         try {
-          const transport = form.transport as "sea" | "road" | "air";
-          let distanceKm: number | undefined;
+          const risk = predictDelayRisk(
+            `${form.origin} → ${form.destination}`,
+            form.destination,
+            form.booking_date || "any"
+          );
+          setDelayRiskLabel(risk.label.toUpperCase());
+        } catch {
+          setDelayRiskLabel(null);
+        }
 
-          if (transport === "road") {
-            const oKnown = findLocation(form.origin);
-            const dKnown = findLocation(form.destination);
-            const o = oKnown ? { lat: oKnown.lat, lng: oKnown.lng } : await geocodeNominatim(form.origin);
-            const d = dKnown ? { lat: dKnown.lat, lng: dKnown.lng } : await geocodeNominatim(form.destination);
-            if (o && d) {
-              distanceKm = await fetchRoadDistanceKm(o, d) ?? haversineDistanceKm(o.lat, o.lng, d.lat, d.lng) * 1.3;
-            }
-          }
-
-          if (transport === "air" && distanceKm === undefined) {
-            const o = await fetchAirportCoords(form.origin);
-            const d = await fetchAirportCoords(form.destination);
-            if (o && d) {
-              distanceKm = haversineDistanceKm(o.lat, o.lng, d.lat, d.lng);
-            }
-          }
-
-          if (transport === "sea" && distanceKm === undefined) {
-            const oKnown = findLocation(form.origin);
-            const dKnown = findLocation(form.destination);
-            if (oKnown && dKnown) {
-              const gc = haversineDistanceKm(oKnown.lat, oKnown.lng, dKnown.lat, dKnown.lng);
-              distanceKm = gc * getSeaRouteMultiplier(form.origin, form.destination);
-            }
-          }
-
-          const result = predictEtaAndRisk({
+        try {
+          const cbmVal = Number(form.space_cbm) || 0;
+          const laneCongestion = Math.min(10, 4 + (cbmVal > 25 ? 2 : 1));
+          const mlDelay = estimateShipmentDelay({
             origin: form.origin,
             destination: form.destination,
-            transport,
-            bookingMode: form.booking_mode,
-            cbm: Number(form.space_cbm) || 0,
-            distanceKm,
+            transport: form.transport as "sea" | "road" | "air",
+            weatherIndex: form.transport === "air" ? 0.18 : form.transport === "road" ? 0.25 : 0.32,
+            portCongestionOrigin: laneCongestion,
+            portCongestionDestination: laneCongestion,
+            vesselScheduleReliability: 0.78,
+            historicalDelayRate: 0.24,
+            routeDistanceKm: distanceKm,
           });
-
-          setEtaDays(result.etaDays);
-          setEtaConfidence(result.etaConfidence);
-          setEtaRange(result.etaRange);
-          setEtaBreakdown(result.breakdown);
-          try {
-            const risk = predictDelayRisk(
-              `${form.origin} → ${form.destination}`,
-              form.destination,
-              form.booking_date || "any"
-            );
-            setDelayRiskLabel(risk.label.toUpperCase());
-          } catch {
-            setDelayRiskLabel(null);
-          }
-
-          try {
-            const cbmVal = Number(form.space_cbm) || 0;
-            const laneCongestion = Math.min(10, 4 + (cbmVal > 25 ? 2 : 1));
-            const mlDelay = estimateShipmentDelay({
-              origin: form.origin,
-              destination: form.destination,
-              transport: form.transport as "sea" | "road" | "air",
-              weatherIndex: form.transport === "air" ? 0.18 : form.transport === "road" ? 0.25 : 0.32,
-              portCongestionOrigin: laneCongestion,
-              portCongestionDestination: laneCongestion,
-              vesselScheduleReliability: 0.78,
-              historicalDelayRate: 0.24,
-              routeDistanceKm: distanceKm,
-            });
-            setDelayInsight(mlDelay);
-          } catch {
-            setDelayInsight(null);
-          }
-        } catch (e) {
-          console.error("Local ETA prediction failed", e);
-          const fallbackDays: Record<string, number> = { sea: 18, road: 7, air: 3 };
-          setEtaDays(fallbackDays[form.transport] ?? 10);
-          setEtaConfidence("low");
-          setDelayRiskLabel(null);
+          setDelayInsight(mlDelay);
+        } catch {
           setDelayInsight(null);
-        } finally {
-          setLoading(false);
         }
-      };
+      } catch (e) {
+        console.error("Local ETA prediction failed", e);
+        const fallbackDays: Record<string, number> = { sea: 18, road: 7, air: 3 };
+        setEtaDays(fallbackDays[form.transport] ?? 10);
+        setEtaConfidence("low");
+        setDelayRiskLabel(null);
+        setDelayInsight(null);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      run();
-    }, [step, form.origin, form.destination, form.transport, form.booking_mode, form.space_cbm, aviationKey, orsKey]);
+    run();
+  }, [form.origin, form.destination, form.transport, form.booking_mode, form.space_cbm, aviationKey, orsKey]);
+
+  const renderEtaCard = () => {
+    const isAir = form.transport === "air";
+    const transitHours = etaBreakdown ? Math.round(etaBreakdown.transitDays * 24 * 10) / 10 : null;
+    const rangeHours = etaRange
+      ? {
+          min: Math.round(etaRange.min * 24 * 10) / 10,
+          max: Math.round(etaRange.max * 24 * 10) / 10,
+        }
+      : null;
+
+    return (
+      <div className="mt-4 p-4 rounded-lg border bg-card">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+        <h4 className="font-semibold text-sm">Real-Time ETA Prediction</h4>
+        {etaConfidence && (
+          <span className={cn(
+            "ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium",
+            etaConfidence === "high" ? "bg-green-500/20 text-green-400" :
+            etaConfidence === "medium" ? "bg-yellow-500/20 text-yellow-400" :
+            "bg-red-500/20 text-red-400"
+          )}>
+            {etaConfidence} confidence
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-baseline gap-1">
+        <span className="text-3xl font-bold text-primary">
+          {isAir && transitHours !== null ? transitHours : (etaDays ?? "...")}
+        </span>
+        <span className="text-sm text-muted-foreground">{isAir ? "hours" : "days"}</span>
+        {etaRange && (
+          <span className="ml-2 text-xs text-muted-foreground">
+            {isAir && rangeHours
+              ? `(range: ${rangeHours.min}–${rangeHours.max} hours)`
+              : `(range: ${etaRange.min}–${etaRange.max} days)`}
+          </span>
+        )}
+      </div>
+
+      {isAir && etaDays !== null && (
+        <div className="mt-1 text-xs text-muted-foreground">
+          Total ETA incl. handling: {etaDays} days
+        </div>
+      )}
+
+      {delayRisk && (
+        <div className={cn(
+          "mt-3 p-2 rounded text-xs",
+          delayRisk === "low" ? "bg-green-500/10 text-green-400" :
+          delayRisk === "medium" ? "bg-yellow-500/10 text-yellow-400" :
+          "bg-red-500/10 text-red-400"
+        )}>
+          <span className="font-semibold">Delay Risk: {delayRisk.toUpperCase()}</span>
+          {delayReason && <p className="mt-1 opacity-80">{delayReason}</p>}
+
+          {delayInsight && (
+            <div className="mt-3 p-3 rounded-lg border bg-muted/40">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                <h4 className="font-semibold text-sm">ML Delay Risk (feature-based)</h4>
+                <span className="ml-auto text-xs font-medium text-amber-400">
+                  {(delayInsight.probability * 100).toFixed(0)}% risk
+                </span>
+              </div>
+              <p className="text-sm text-foreground/80">Expected arrival ~{delayInsight.expectedEtaDays} days</p>
+              {delayInsight.factors.length > 0 && (
+                <ul className="mt-2 text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                  {delayInsight.factors.slice(0, 3).map((f, idx) => (
+                    <li key={idx}>{f}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {etaBreakdown && (
+        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>Transit Time:</span>
+          <span className="text-right font-medium text-foreground">{etaBreakdown.transitDays} days</span>
+          <span>Origin Handling:</span>
+          <span className="text-right font-medium text-foreground">{etaBreakdown.originHandling} days</span>
+          <span>Dest Handling:</span>
+          <span className="text-right font-medium text-foreground">{etaBreakdown.destHandling} days</span>
+          <span>Customs Clearance:</span>
+          <span className="text-right font-medium text-foreground">{etaBreakdown.customsClearance} days</span>
+          {etaBreakdown.weatherImpact > 0 && (
+            <>
+              <span>Weather Impact:</span>
+              <span className="text-right font-medium text-yellow-400">+{etaBreakdown.weatherImpact}%</span>
+            </>
+          )}
+          <span>Port Congestion:</span>
+          <span className={cn(
+            "text-right font-medium",
+            etaBreakdown.congestionImpact === "High" ? "text-red-400" :
+            etaBreakdown.congestionImpact === "Moderate" ? "text-yellow-400" :
+            "text-green-400"
+          )}>{etaBreakdown.congestionImpact}</span>
+        </div>
+      )}
+    </div>
+  );
+
+  const canShowEta = !!(
+    form.transport &&
+    isValidLocationForMode(form.transport, form.origin) &&
+    isValidLocationForMode(form.transport, form.destination) &&
+    form.origin !== form.destination
+  );
+
   const priceINR = calculatePriceINR(form);
 
   const getFilteredLocations = (mode: string) => {
@@ -1522,71 +1711,6 @@ export default function Booking() {
     { number: 3, label: "Container" },
     { number: 4, label: "Summary" },
   ];
-
-  /* ---------------- PREDICT ETA (Real-time dataset) ---------------- */
-
-  useEffect(() => {
-    if (step !== 4) return;
-    if (!form.origin || !form.destination || !form.transport) return;
-    setLoading(true);
-
-    // Use local real-world prediction engine (instant, no network required)
-    try {
-      const result = predictEtaAndRisk({
-        origin: form.origin,
-        destination: form.destination,
-        transport: form.transport as "sea" | "road" | "air",
-        bookingMode: form.booking_mode,
-        cbm: Number(form.space_cbm) || 0,
-      });
-
-      setEtaDays(result.etaDays);
-      setEtaConfidence(result.etaConfidence);
-      setEtaRange(result.etaRange);
-      setDelayRisk(result.delayRisk);
-      setDelayReason(result.delayReason);
-      setEtaBreakdown(result.breakdown);
-      try {
-        const risk = predictDelayRisk(
-          `${form.origin} → ${form.destination}`,
-          form.destination,
-          form.booking_date || "any"
-        );
-        setDelayRiskLabel(risk.label.toUpperCase());
-      } catch {
-        setDelayRiskLabel(null);
-      }
-
-      try {
-        const cbmVal = Number(form.space_cbm) || 0;
-        const laneCongestion = Math.min(10, 4 + (cbmVal > 25 ? 2 : 1));
-        const mlDelay = estimateShipmentDelay({
-          origin: form.origin,
-          destination: form.destination,
-          transport: form.transport as "sea" | "road" | "air",
-          weatherIndex: form.transport === "air" ? 0.18 : form.transport === "road" ? 0.25 : 0.32,
-          portCongestionOrigin: laneCongestion,
-          portCongestionDestination: laneCongestion,
-          vesselScheduleReliability: 0.78,
-          historicalDelayRate: 0.24,
-          routeDistanceKm: distanceKm,
-        });
-        setDelayInsight(mlDelay);
-      } catch {
-        setDelayInsight(null);
-      }
-    } catch (e) {
-      console.error("Local ETA prediction failed", e);
-      // Fallback to simple estimates
-      const fallbackDays: Record<string, number> = { sea: 18, road: 7, air: 3 };
-      setEtaDays(fallbackDays[form.transport] ?? 10);
-      setEtaConfidence("low");
-      setDelayRiskLabel(null);
-      setDelayInsight(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [step, form.origin, form.destination, form.transport, form.booking_mode, form.space_cbm]);
 
   // Compute container suggestion whenever CBM or mode changes
   useEffect(() => {
@@ -2163,6 +2287,8 @@ export default function Booking() {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {canShowEta && renderEtaCard()}
                   </>
                 )}
               </div>
@@ -2351,93 +2477,7 @@ export default function Booking() {
                 <p><b>Cargo:</b> {form.cargo_type}</p>
                 <p><b>Mode:</b> {form.booking_mode}</p>
 
-                {/* ─── ETA Prediction Card ─── */}
-                <div className="mt-4 p-4 rounded-lg border bg-card">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    <h4 className="font-semibold text-sm">Real-Time ETA Prediction</h4>
-                    {etaConfidence && (
-                      <span className={cn(
-                        "ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium",
-                        etaConfidence === "high" ? "bg-green-500/20 text-green-400" :
-                        etaConfidence === "medium" ? "bg-yellow-500/20 text-yellow-400" :
-                        "bg-red-500/20 text-red-400"
-                      )}>
-                        {etaConfidence} confidence
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold text-primary">{etaDays ?? "..."}</span>
-                    <span className="text-sm text-muted-foreground">days</span>
-                    {etaRange && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        (range: {etaRange.min}–{etaRange.max} days)
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Delay Risk */}
-                  {delayRisk && (
-                    <div className={cn(
-                      "mt-3 p-2 rounded text-xs",
-                      delayRisk === "low" ? "bg-green-500/10 text-green-400" :
-                      delayRisk === "medium" ? "bg-yellow-500/10 text-yellow-400" :
-                      "bg-red-500/10 text-red-400"
-                    )}>
-                      <span className="font-semibold">Delay Risk: {delayRisk.toUpperCase()}</span>
-                      {delayReason && <p className="mt-1 opacity-80">{delayReason}</p>}
-
-                {delayInsight && (
-                  <div className="p-4 rounded-lg border bg-muted/40">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                      <h4 className="font-semibold text-sm">ML Delay Risk (feature-based)</h4>
-                      <span className="ml-auto text-xs font-medium text-amber-400">
-                        {(delayInsight.probability * 100).toFixed(0)}% risk
-                      </span>
-                    </div>
-                    <p className="text-sm text-foreground/80">Expected arrival ~{delayInsight.expectedEtaDays} days</p>
-                    {delayInsight.factors.length > 0 && (
-                      <ul className="mt-2 text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                        {delayInsight.factors.slice(0, 3).map((f, idx) => (
-                          <li key={idx}>{f}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-                    </div>
-                  )}
-
-                  {/* Breakdown */}
-                  {etaBreakdown && (
-                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      <span>Transit Time:</span>
-                      <span className="text-right font-medium text-foreground">{etaBreakdown.transitDays} days</span>
-                      <span>Origin Handling:</span>
-                      <span className="text-right font-medium text-foreground">{etaBreakdown.originHandling} days</span>
-                      <span>Dest Handling:</span>
-                      <span className="text-right font-medium text-foreground">{etaBreakdown.destHandling} days</span>
-                      <span>Customs Clearance:</span>
-                      <span className="text-right font-medium text-foreground">{etaBreakdown.customsClearance} days</span>
-                      {etaBreakdown.weatherImpact > 0 && (
-                        <>
-                          <span>Weather Impact:</span>
-                          <span className="text-right font-medium text-yellow-400">+{etaBreakdown.weatherImpact}%</span>
-                        </>
-                      )}
-                      <span>Port Congestion:</span>
-                      <span className={cn(
-                        "text-right font-medium",
-                        etaBreakdown.congestionImpact === "High" ? "text-red-400" :
-                        etaBreakdown.congestionImpact === "Moderate" ? "text-yellow-400" :
-                        "text-green-400"
-                      )}>{etaBreakdown.congestionImpact}</span>
-                    </div>
-                  )}
-                </div>
+                {canShowEta && renderEtaCard()}
                 {(() => {
                   const selectedContainer = availableContainers.find(c => c.id === form.selected_container_id);
                   switch (form.booking_mode) {
