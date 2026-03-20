@@ -1,6 +1,7 @@
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from "react-leaflet";
 import "@/lib/leafletFix";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import L from "leaflet";
 import { useParams, Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +59,29 @@ export default function Tracking() {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [routeSource, setRouteSource] = useState<"ors" | "mode" | "simulated" | "none">("none");
   const orsKey = import.meta.env.VITE_ORS_API_KEY as string | undefined;
+  const aviationKey = import.meta.env.VITE_AVIATIONSTACK_API_KEY as string | undefined;
+
+  const airMarkerIcon = useMemo(() => {
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+        <circle cx="20" cy="20" r="18" fill="#0ea5e9" stroke="#0284c7" stroke-width="2" />
+        <path d="M8 22l24-6-24-6 6 6-6 6z" fill="#ffffff" />
+      </svg>
+    `;
+    const iconUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    return L.icon({
+      iconUrl,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+      popupAnchor: [0, -18],
+    });
+  }, []);
+
+  const mapMarkerIcon = useMemo(() => {
+    const mode = (booking?.transport_mode || "").toLowerCase();
+    if (mode.includes("air")) return airMarkerIcon;
+    return undefined;
+  }, [airMarkerIcon, booking?.transport_mode]);
 
   type DocType = DocumentType;
   const docTypes: { key: DocType; label: string }[] = [
@@ -375,17 +399,56 @@ export default function Tracking() {
     (async () => {
       const o = booking.origin;
       const d = booking.destination;
+      const transport = (booking?.transport_mode || "").toLowerCase();
+
+      const normalizeAirportQuery = (value: string) => {
+        return value
+          .replace(/international|airport|terminal/gi, "")
+          .replace(/\s*ICD\b/gi, "")
+          .replace(/,\s*[^,]+$/, "")
+          .trim();
+      };
+
+      const fetchAirportCoords = async (query: string): Promise<GPS | null> => {
+        if (!aviationKey) return null;
+        const q = normalizeAirportQuery(query);
+        if (!q) return null;
+        try {
+          const res = await fetch(
+            `https://api.aviationstack.com/v1/airports?access_key=${encodeURIComponent(aviationKey)}&search=${encodeURIComponent(q)}`
+          );
+          if (!res.ok) return null;
+          const data = await res.json();
+          const hit = data?.data?.[0];
+          if (hit?.latitude && hit?.longitude) {
+            return { lat: Number(hit.latitude), lng: Number(hit.longitude) };
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      };
       // Sequential requests to respect Nominatim 1 req/s rate limit
-      const oc = await geocode(o);
+      let oc: GPS | null = null;
+      let dc: GPS | null = null;
+
+      if (transport === "air" && aviationKey) {
+        oc = await fetchAirportCoords(o);
+        dc = await fetchAirportCoords(d);
+      }
+
+      if (!oc) {
+        oc = await geocode(o);
+      }
       await new Promise((r) => setTimeout(r, 1100));
-      const dc = await geocode(d);
+      if (!dc) {
+        dc = await geocode(d);
+      }
       const coords: RoutePoint[] = [];
       if (oc) coords.push({ ...oc, label: "Origin", address: o });
       if (dc) coords.push({ ...dc, label: "Destination", address: d });
 
       // If geocoding failed, fall back to simulated route points
-      const transport = (booking?.transport_mode || "").toLowerCase();
-
       const tryOrs = async (start: RoutePoint, end: RoutePoint) => {
         if (transport !== "road" || !orsKey) return false;
         try {
@@ -655,7 +718,7 @@ export default function Tracking() {
                     radius={10}
                     pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.2 }}
                   />
-                  <Marker position={[displayGps.lat, displayGps.lng]}>
+                  <Marker position={[displayGps.lat, displayGps.lng]} icon={mapMarkerIcon}>
                     <Popup>
                       <div className="space-y-1">
                         <div className="font-semibold">Container Location</div>
@@ -710,7 +773,7 @@ export default function Tracking() {
                     style={{ height: "100%", width: "100%" }}
                   >
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    <Marker position={[routeCoords[0].lat, routeCoords[0].lng]}>
+                    <Marker position={[routeCoords[0].lat, routeCoords[0].lng]} icon={mapMarkerIcon}>
                       <Popup>
                         <b>{routeCoords[0].label}</b>
                         <br />
@@ -728,7 +791,7 @@ export default function Tracking() {
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     {routeCoords.length > 1 && (
                       <>
-                        <Marker position={[routeCoords[0].lat, routeCoords[0].lng]}>
+                        <Marker position={[routeCoords[0].lat, routeCoords[0].lng]} icon={mapMarkerIcon}>
                           <Popup>
                             <b>Origin</b>
                             <br />
@@ -737,7 +800,7 @@ export default function Tracking() {
                             <small className="text-xs text-muted-foreground">{routeCoords[0].lat.toFixed(6)}, {routeCoords[0].lng.toFixed(6)}</small>
                           </Popup>
                         </Marker>
-                        <Marker position={[routeCoords[routeCoords.length - 1].lat, routeCoords[routeCoords.length - 1].lng]}>
+                        <Marker position={[routeCoords[routeCoords.length - 1].lat, routeCoords[routeCoords.length - 1].lng]} icon={mapMarkerIcon}>
                           <Popup>
                             <b>Destination</b>
                             <br />
