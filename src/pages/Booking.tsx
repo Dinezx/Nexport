@@ -6,6 +6,7 @@ import { saveOfflineBooking } from "@/services/bookingService";
 import { predictEtaAndRisk } from "@/lib/prediction";
 import { predictDelayRisk, estimateShipmentDelay, type DelayRiskLevel } from "@/ml/delayPredictor";
 import { suggestContainer, type ContainerSuggestion } from "@/services/containerOptimizer";
+import { LOCATION_COORDS, haversineDistanceKm, getSeaRouteMultiplier } from "@/lib/shipmentData";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   Card,
@@ -1202,6 +1203,8 @@ export default function Booking() {
     congestionImpact: string;
   } | null>(null);
   const [delayRiskLabel, setDelayRiskLabel] = useState<string | null>(null);
+  const orsKey = import.meta.env.VITE_ORS_API_KEY as string | undefined;
+  const aviationKey = import.meta.env.VITE_AVIATIONSTACK_API_KEY as string | undefined;
 
   const defaultForm = {
     booking_date: "",
@@ -1218,66 +1221,175 @@ export default function Booking() {
   };
 
   const [form, setForm] = useState<{
-    booking_date: string;
-    origin: string;
-    destination: string;
-    transport: string;
-    cargo_type: string;
-    cargo_weight: string;
-    container_type: string;
-    container_size: string;
-    booking_mode: "full" | "partial";
-    space_cbm: string;
-    selected_container_id: string;
-  }>(defaultForm);
+    useEffect(() => {
+      if (step !== 4) return;
+      if (!form.origin || !form.destination || !form.transport) return;
 
-  const [availableContainers, setAvailableContainers] = useState<any[]>([]);
-  const [loadingContainers, setLoadingContainers] = useState(false);
-  const [containerAdvice, setContainerAdvice] = useState<ContainerSuggestion | null>(null);
-  const [delayInsight, setDelayInsight] = useState<{
-    probability: number;
-    label: DelayRiskLevel;
-    expectedEtaDays: number;
-    factors: string[];
-  } | null>(null);
+      const normalize = (value: string) => value.toLowerCase().trim();
+      const findLocation = (name: string) => {
+        if (LOCATION_COORDS[name]) return LOCATION_COORDS[name];
+        const lower = normalize(name);
+        const city = lower.split(",")[0].split(" ")[0];
+        let best: { coord: any; score: number } | null = null;
+        for (const [key, coord] of Object.entries(LOCATION_COORDS)) {
+          const kLower = key.toLowerCase();
+          let score = 0;
+          if (kLower.includes(lower) || lower.includes(kLower)) score += 6;
+          if (kLower.includes(city)) score += 3;
+          if (score > 0 && (!best || score > best.score)) {
+            best = { coord, score };
+          }
+        }
+        return best?.coord ?? null;
+      };
 
-  // Load draft on mount (unless explicitly starting a new booking)
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const forceNew = params.get("new") === "1";
+      const geocodeNominatim = async (q: string): Promise<{ lat: number; lng: number } | null> => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
+            { referrerPolicy: "no-referrer" }
+          );
+          if (!res.ok) return null;
+          const json = await res.json();
+          if (json && json.length > 0) {
+            return { lat: parseFloat(json[0].lat), lng: parseFloat(json[0].lon) };
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      };
 
-    if (forceNew) {
-      try {
-        localStorage.removeItem(BOOKING_DRAFT_KEY);
-      } catch (err) {
-        console.warn("Booking draft clear failed", err);
-      }
-      setForm(defaultForm);
-      setStep(1);
-      navigate("/booking", { replace: true });
-      return;
-    }
+      const fetchAirportCoords = async (query: string) => {
+        if (!aviationKey) return null;
+        const q = query
+          .replace(/international|airport|terminal/gi, "")
+          .replace(/\s*ICD\b/gi, "")
+          .replace(/,\s*[^,]+$/, "")
+          .trim();
+        if (!q) return null;
+        try {
+          const res = await fetch(
+            `https://api.aviationstack.com/v1/airports?access_key=${encodeURIComponent(aviationKey)}&search=${encodeURIComponent(q)}`
+          );
+          if (!res.ok) return null;
+          const data = await res.json();
+          const hit = data?.data?.[0];
+          if (hit?.latitude && hit?.longitude) {
+            return { lat: Number(hit.latitude), lng: Number(hit.longitude) };
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      };
 
-    try {
-      const raw = localStorage.getItem(BOOKING_DRAFT_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setForm((prev) => ({ ...prev, ...parsed }));
-      }
-    } catch (err) {
-      console.warn("Booking draft load failed", err);
-    }
-  }, [location.search, navigate]);
+      const fetchRoadDistanceKm = async (o: { lat: number; lng: number }, d: { lat: number; lng: number }) => {
+        if (!orsKey) return null;
+        try {
+          const res = await fetch(
+            `https://api.openrouteservice.org/v2/directions/driving-car?start=${o.lng},${o.lat}&end=${d.lng},${d.lat}`,
+            { headers: { Authorization: orsKey } }
+          );
+          if (!res.ok) return null;
+          const data = await res.json();
+          const meters = data?.features?.[0]?.properties?.summary?.distance;
+          if (typeof meters === "number" && meters > 0) return meters / 1000;
+        } catch {
+          return null;
+        }
+        return null;
+      };
 
-  // Persist draft whenever the form changes
-  useEffect(() => {
-    try {
-      localStorage.setItem(BOOKING_DRAFT_KEY, JSON.stringify(form));
-    } catch (err) {
-      console.warn("Booking draft save failed", err);
-    }
-  }, [form]);
+      const run = async () => {
+        setLoading(true);
+        try {
+          const transport = form.transport as "sea" | "road" | "air";
+          let distanceKm: number | undefined;
 
+          if (transport === "road") {
+            const oKnown = findLocation(form.origin);
+            const dKnown = findLocation(form.destination);
+            const o = oKnown ? { lat: oKnown.lat, lng: oKnown.lng } : await geocodeNominatim(form.origin);
+            const d = dKnown ? { lat: dKnown.lat, lng: dKnown.lng } : await geocodeNominatim(form.destination);
+            if (o && d) {
+              distanceKm = await fetchRoadDistanceKm(o, d) ?? haversineDistanceKm(o.lat, o.lng, d.lat, d.lng) * 1.3;
+            }
+          }
+
+          if (transport === "air" && distanceKm === undefined) {
+            const o = await fetchAirportCoords(form.origin);
+            const d = await fetchAirportCoords(form.destination);
+            if (o && d) {
+              distanceKm = haversineDistanceKm(o.lat, o.lng, d.lat, d.lng);
+            }
+          }
+
+          if (transport === "sea" && distanceKm === undefined) {
+            const oKnown = findLocation(form.origin);
+            const dKnown = findLocation(form.destination);
+            if (oKnown && dKnown) {
+              const gc = haversineDistanceKm(oKnown.lat, oKnown.lng, dKnown.lat, dKnown.lng);
+              distanceKm = gc * getSeaRouteMultiplier(form.origin, form.destination);
+            }
+          }
+
+          const result = predictEtaAndRisk({
+            origin: form.origin,
+            destination: form.destination,
+            transport,
+            bookingMode: form.booking_mode,
+            cbm: Number(form.space_cbm) || 0,
+            distanceKm,
+          });
+
+          setEtaDays(result.etaDays);
+          setEtaConfidence(result.etaConfidence);
+          setEtaRange(result.etaRange);
+          setEtaBreakdown(result.breakdown);
+          try {
+            const risk = predictDelayRisk(
+              `${form.origin} → ${form.destination}`,
+              form.destination,
+              form.booking_date || "any"
+            );
+            setDelayRiskLabel(risk.label.toUpperCase());
+          } catch {
+            setDelayRiskLabel(null);
+          }
+
+          try {
+            const cbmVal = Number(form.space_cbm) || 0;
+            const laneCongestion = Math.min(10, 4 + (cbmVal > 25 ? 2 : 1));
+            const mlDelay = estimateShipmentDelay({
+              origin: form.origin,
+              destination: form.destination,
+              transport: form.transport as "sea" | "road" | "air",
+              weatherIndex: form.transport === "air" ? 0.18 : form.transport === "road" ? 0.25 : 0.32,
+              portCongestionOrigin: laneCongestion,
+              portCongestionDestination: laneCongestion,
+              vesselScheduleReliability: 0.78,
+              historicalDelayRate: 0.24,
+              routeDistanceKm: distanceKm,
+            });
+            setDelayInsight(mlDelay);
+          } catch {
+            setDelayInsight(null);
+          }
+        } catch (e) {
+          console.error("Local ETA prediction failed", e);
+          const fallbackDays: Record<string, number> = { sea: 18, road: 7, air: 3 };
+          setEtaDays(fallbackDays[form.transport] ?? 10);
+          setEtaConfidence("low");
+          setDelayRiskLabel(null);
+          setDelayInsight(null);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      run();
+    }, [step, form.origin, form.destination, form.transport, form.booking_mode, form.space_cbm, aviationKey, orsKey]);
   const priceINR = calculatePriceINR(form);
 
   const getFilteredLocations = (mode: string) => {
@@ -1457,7 +1569,7 @@ export default function Booking() {
           portCongestionDestination: laneCongestion,
           vesselScheduleReliability: 0.78,
           historicalDelayRate: 0.24,
-          routeDistanceKm: undefined,
+          routeDistanceKm: distanceKm,
         });
         setDelayInsight(mlDelay);
       } catch {

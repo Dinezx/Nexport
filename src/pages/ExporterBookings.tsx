@@ -227,7 +227,7 @@ export default function ExporterBookings() {
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">My Bookings</h1>
           <Button asChild>
-            <Link to="/booking">New Booking</Link>
+            <Link to="/booking?new=1">New Booking</Link>
           </Button>
         </div>
 

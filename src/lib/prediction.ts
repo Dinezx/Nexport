@@ -116,6 +116,7 @@ export const predictEtaAndRisk = (params: {
   transport: TransportMode;
   bookingMode: BookingMode;
   cbm: number;
+  distanceKm?: number;
 }): {
   etaDays: number;
   etaRange: { min: number; max: number };
@@ -132,7 +133,7 @@ export const predictEtaAndRisk = (params: {
   };
 } => {
   const currentMonth = new Date().getMonth();
-  const distanceKm = getRealDistanceKm(params.origin, params.destination, params.transport);
+  const distanceKm = params.distanceKm ?? getRealDistanceKm(params.origin, params.destination, params.transport);
 
   // ── Try historical data first ──
   const historical = findHistoricalRoute(params.origin, params.destination, params.transport);
