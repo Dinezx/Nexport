@@ -36,6 +36,8 @@ import {
   ConversationWithDetails,
 } from "@/services/chatService";
 import { supabase } from "@/lib/supabase";
+import { createNotification } from "@/services/notificationService";
+import { sendEmail } from "@/services/emailService";
 
 type SenderRole = "exporter" | "provider" | "ai" | "system";
 type DeliveryStatus = "pending" | "sent" | "delivered" | "failed";
@@ -48,7 +50,7 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([]);
-  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [conversation, setConversation] = useState<ConversationWithDetails | null>(null);
   const [chatMode] = useState<ChatMode>("provider");
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -213,6 +215,45 @@ export default function Chat() {
       setMessages((prev) => [...prev, userMsg]);
       const messageText = text;
       setText("");
+
+      if (!conversation.id.startsWith("conv-offline-")) {
+        const recipientId = senderRole === "exporter" ? conversation.provider_id : conversation.exporter_id;
+        const routeLabel = conversation.booking_origin && conversation.booking_destination
+          ? `${conversation.booking_origin} → ${conversation.booking_destination}`
+          : `Booking ${conversation.booking_id.slice(0, 8).toUpperCase()}`;
+
+        try {
+          await createNotification({
+            user_id: recipientId,
+            type: "message",
+            message: `New message on ${routeLabel}: ${messageText.slice(0, 80)}`,
+          });
+        } catch (err) {
+          console.warn("Message notification failed", err);
+        }
+
+        try {
+          const { data: recipientProfile } = await supabase
+            .from("profiles")
+            .select("email, name")
+            .eq("id", recipientId)
+            .maybeSingle();
+
+          if (recipientProfile?.email) {
+            await sendEmail({
+              to: recipientProfile.email,
+              subject: `New message from ${senderRole === "exporter" ? "Exporter" : "Provider"}`,
+              text: `You received a new message on ${routeLabel}.
+
+${messageText}
+
+Open Nexport to reply.`,
+            });
+          }
+        } catch (err) {
+          console.warn("Message email failed", err);
+        }
+      }
 
       if (chatMode === "ai") {
         // AI mode — always get AI response

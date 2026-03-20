@@ -12,9 +12,25 @@ import {
   ChevronRight,
   Users,
   Truck,
+  Bell,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { supabase } from "@/lib/supabase";
+import {
+  fetchNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type NotificationItem,
+} from "@/services/notificationService";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface DashboardLayoutProps {
   userType: "exporter" | "provider" | "admin";
@@ -53,6 +69,7 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   /* ------------------ AUTH GUARD (FIXED) ------------------ */
 
@@ -70,6 +87,64 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
       navigate("/login", { replace: true });
     }
   }, [user, loading, navigate, userType]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let isMounted = true;
+
+    const loadNotifications = async () => {
+      try {
+        const items = await fetchNotifications(user.id, 8);
+        if (isMounted) setNotifications(items);
+      } catch (err) {
+        console.warn("Notification fetch failed", err);
+      }
+    };
+
+    loadNotifications();
+
+    const channel = supabase
+      .channel(`notifications-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: { new: NotificationItem }) => {
+          setNotifications((prev) => [payload.new, ...prev].slice(0, 8));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const handleMarkAllRead = async () => {
+    if (!user?.id) return;
+    try {
+      await markAllNotificationsRead(user.id);
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (err) {
+      console.warn("Mark all read failed", err);
+    }
+  };
+
+  const handleMarkRead = async (id: string) => {
+    try {
+      await markNotificationRead(id);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    } catch (err) {
+      console.warn("Mark read failed", err);
+    }
+  };
 
   if (loading) {
     return (
@@ -175,6 +250,52 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
           collapsed ? "ml-16" : "ml-64"
         )}
       >
+        <div className="sticky top-0 z-30 flex justify-end border-b bg-background/80 px-6 py-3 backdrop-blur">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="relative rounded-full p-2 text-muted-foreground hover:text-foreground">
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="flex items-center justify-between">
+                Notifications
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Mark all read
+                  </button>
+                )}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {notifications.length === 0 ? (
+                <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                  No new notifications
+                </div>
+              ) : (
+                notifications.map((n) => (
+                  <DropdownMenuItem
+                    key={n.id}
+                    className={cn("flex flex-col items-start gap-1", !n.read && "bg-muted/60")}
+                    onClick={() => handleMarkRead(n.id)}
+                  >
+                    <span className="text-sm text-foreground">{n.message}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(n.created_at).toLocaleString()}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <div className="p-6 page-enter">{children}</div>
       </main>
     </div>
