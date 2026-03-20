@@ -428,14 +428,7 @@ Open Nexport to reply.`,
                   {conversation ? "Provider Chat" : "Select a conversation"}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                {rateLimitStatus && (
-                  <span className="text-xs text-zinc-400">
-                    {formatRateLimitStatus(rateLimitStatus)}
-                  </span>
-                )}
-                <MoreVertical className="text-zinc-400 h-5 w-5" />
-              </div>
+              <div className="flex items-center gap-2" />
             </div>
 
             {/* Mode toggle removed; always provider view */}
