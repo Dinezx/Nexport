@@ -24,6 +24,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const setUserFromSession = async (session: { user: { id: string } }) => {
+      const fallbackRole = localStorage.getItem("userRole") as AuthUser["role"] | null;
+      setUser({ id: session.user.id, role: fallbackRole || "exporter" });
+      setLoading(false);
+
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, role")
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        if (profile?.id && profile.role) {
+          setUser({ id: profile.id, role: profile.role });
+        }
+      } catch {
+        // Keep fallback role if profile fetch fails
+      }
+    };
+
     const loadUser = async () => {
       try {
         // Quick check: is Supabase even reachable? (4s timeout)
@@ -74,11 +94,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Only reload if an actual session change occurred (not just a retry)
       if (session?.user) {
         setLoading(true);
-        loadUser();
-      } else if (_event === "SIGNED_OUT") {
+        setUserFromSession(session);
+        return;
+      }
+      if (_event === "SIGNED_OUT") {
         setUser(null);
         setLoading(false);
       }

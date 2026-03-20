@@ -1446,7 +1446,10 @@ export default function Booking() {
             historicalDelayRate: 0.24,
             routeDistanceKm: distanceKm,
           });
-          setDelayInsight(mlDelay);
+          const adjusted = form.transport === "air" && result.etaDays
+            ? { ...mlDelay, expectedEtaDays: Math.max(1, result.etaDays) }
+            : mlDelay;
+          setDelayInsight(adjusted);
         } catch {
           setDelayInsight(null);
         }
@@ -1531,7 +1534,11 @@ export default function Booking() {
                   {(delayInsight.probability * 100).toFixed(0)}% risk
                 </span>
               </div>
-              <p className="text-sm text-foreground/80">Expected arrival ~{delayInsight.expectedEtaDays} days</p>
+              <p className="text-sm text-foreground/80">
+                Expected arrival ~{isAir
+                  ? `${Math.round(delayInsight.expectedEtaDays * 24 * 10) / 10} hours`
+                  : `${delayInsight.expectedEtaDays} days`}
+              </p>
               {delayInsight.factors.length > 0 && (
                 <ul className="mt-2 text-xs text-muted-foreground space-y-1 list-disc list-inside">
                   {delayInsight.factors.slice(0, 3).map((f, idx) => (
@@ -1571,6 +1578,7 @@ export default function Booking() {
       )}
     </div>
   );
+  };
 
   const canShowEta = !!(
     form.transport &&
@@ -1596,12 +1604,44 @@ export default function Booking() {
 
   const renderCbmSuggestion = (cbm: number) => {
     if (cbm <= 0 || !containerAdvice) return "Enter your CBM to see the best option.";
-    const lines = [
-      `Recommended: ${containerAdvice.recommendation}`,
-      `Total volume: ${containerAdvice.totalCbm.toFixed(2)} CBM`,
-      ...containerAdvice.rationale,
-    ];
-    return lines.join(" · ");
+
+    const lclPrice = Math.round(cbm * (LCL_RATE_USD[form.transport] || 0) * USD_TO_INR);
+    const fcl20Price = Math.round((FCL_BASE_USD["20"] || 0) * (form.container_type === "reefer" ? 1.3 : 1) * USD_TO_INR);
+    const fcl40Price = Math.round((FCL_BASE_USD["40"] || 0) * (form.container_type === "reefer" ? 1.3 : 1) * USD_TO_INR);
+
+    const formatInr = (value: number) => `₹ ${value.toLocaleString("en-IN")}`;
+    const bestPrice = Math.min(lclPrice, fcl20Price, fcl40Price);
+    const bestPriceLabel = bestPrice === lclPrice ? "LCL" : bestPrice === fcl20Price ? "20FT" : "40FT";
+    const recommendedLabel = containerAdvice.recommendation;
+
+    return (
+      <div className="space-y-2">
+        <div className="text-sm font-medium">Best fit for your cargo: {recommendedLabel}</div>
+        <div className="text-xs text-muted-foreground">Total volume: {containerAdvice.totalCbm.toFixed(2)} CBM</div>
+        <div className="text-xs text-muted-foreground">
+          {containerAdvice.rationale.join(" · ")}
+        </div>
+
+        <div className="mt-2 grid gap-1 text-xs">
+          <div className={cn("flex items-center justify-between", recommendedLabel === "LCL" && "font-semibold text-foreground")}> 
+            <span>LCL (partial)</span>
+            <span>{formatInr(lclPrice)}</span>
+          </div>
+          <div className={cn("flex items-center justify-between", recommendedLabel === "20FT" && "font-semibold text-foreground")}> 
+            <span>20FT FCL</span>
+            <span>{formatInr(fcl20Price)}</span>
+          </div>
+          <div className={cn("flex items-center justify-between", recommendedLabel === "40FT" && "font-semibold text-foreground")}> 
+            <span>40FT FCL</span>
+            <span>{formatInr(fcl40Price)}</span>
+          </div>
+        </div>
+
+        <div className="text-xs text-muted-foreground">
+          Lowest estimated cost: {bestPriceLabel} ({formatInr(bestPrice)})
+        </div>
+      </div>
+    );
   };
 
   /* ---------------- FETCH AVAILABLE CONTAINERS ---------------- */
@@ -2388,7 +2428,24 @@ export default function Booking() {
                     ) : availableContainers.length > 0 ? (
                       <div className="space-y-3">
                         <Label>Select Container</Label>
-                        {availableContainers.map((container) => (
+                        {(() => {
+                          const displayContainers = form.booking_mode === "full"
+                            ? availableContainers.filter((c) => {
+                                const total = c.total_space_cbm ?? 0;
+                                const effectiveAvail = c.effective_available_cbm ?? c.available_space_cbm ?? total;
+                                return total > 0 && effectiveAvail >= total;
+                              })
+                            : availableContainers;
+
+                          if (form.booking_mode === "full" && displayContainers.length === 0) {
+                            return (
+                              <div className="text-center py-4 text-muted-foreground">
+                                No fully available containers for this route.
+                              </div>
+                            );
+                          }
+
+                          return displayContainers.map((container) => (
                           <div
                             key={container.id}
                             className={cn(
@@ -2429,7 +2486,8 @@ export default function Booking() {
                               </div>
                             </div>
                           </div>
-                        ))}
+                        ));
+                        })()}
                         {form.booking_mode === "partial" && form.selected_container_id && (
                           <Input
                             type="number"
