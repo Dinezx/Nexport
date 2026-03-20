@@ -301,12 +301,12 @@ export default function ProviderDashboard() {
     <DashboardLayout userType="provider">
       <div className="space-y-8">
         {/* Header */}
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Provider Dashboard</h1>
-            <p className="text-muted-foreground">Manage your containers and shipments — live data.</p>
+            <p className="text-muted-foreground">Manage your containers and shipments with live data.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap xl:justify-end xl:ml-auto">
+          <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap xl:justify-end xl:ml-auto xl:pr-12">
             <Button
               variant="outline"
               size="sm"

@@ -246,14 +246,14 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
       {/* Main Content */}
       <main
         className={cn(
-          "flex-1 transition-all duration-300",
+          "relative flex-1 transition-all duration-300",
           collapsed ? "ml-16" : "ml-64"
         )}
       >
-        <div className="sticky top-0 z-30 flex justify-end border-b bg-background/80 px-6 py-3 backdrop-blur">
+        <div className="absolute right-6 top-6 z-30">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="relative rounded-full p-2 text-muted-foreground hover:text-foreground">
+              <button className="relative rounded-full border border-border bg-card p-2 text-muted-foreground shadow-sm hover:text-foreground">
                 <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (
                   <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">

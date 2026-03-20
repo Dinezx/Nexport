@@ -390,12 +390,17 @@ Open Nexport to reply.`,
                     {conv.booking_status && (
                       <span className={cn(
                         "text-[10px] px-1.5 py-0.5 rounded font-medium",
-                        conv.booking_status === "paid" && "bg-green-900/40 text-green-400",
+                        ["paid", "payment_completed", "payment complete", "payment completed"].includes(conv.booking_status) && "bg-green-900/40 text-green-400",
                         conv.booking_status === "in_transit" && "bg-blue-900/40 text-blue-400",
                         conv.booking_status === "completed" && "bg-zinc-700 text-zinc-300",
                         conv.booking_status === "pending_payment" && "bg-yellow-900/40 text-yellow-400",
                       )}>
-                        {conv.booking_status.replace("_", " ")}
+                        {(() => {
+                          const normalized = conv.booking_status.replace(/_/g, " ").trim();
+                          if (["payment completed", "payment complete"].includes(normalized)) return "Paid";
+                          if (normalized === "paid") return "Paid";
+                          return normalized;
+                        })()}
                       </span>
                     )}
                   </div>
