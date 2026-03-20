@@ -63,17 +63,16 @@ export default function Tracking() {
 
   const airMarkerIcon = useMemo(() => {
     const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-        <circle cx="20" cy="20" r="18" fill="#0ea5e9" stroke="#0284c7" stroke-width="2" />
-        <path d="M8 22l24-6-24-6 6 6-6 6z" fill="#ffffff" />
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 44 44">
+        <path d="M22 7l3.5 9.5h9.5l2 3-11.5 2.5L22 37l-3.5-15-11.5-2.5 2-3h9.5L22 7z" fill="#0284c7" />
       </svg>
     `;
     const iconUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     return L.icon({
       iconUrl,
-      iconSize: [40, 40],
-      iconAnchor: [20, 20],
-      popupAnchor: [0, -18],
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -12],
     });
   }, []);
 
@@ -82,6 +81,8 @@ export default function Tracking() {
     if (mode.includes("air")) return airMarkerIcon;
     return undefined;
   }, [airMarkerIcon, booking?.transport_mode]);
+
+  const mapMarkerProps = mapMarkerIcon ? { icon: mapMarkerIcon } : undefined;
 
   type DocType = DocumentType;
   const docTypes: { key: DocType; label: string }[] = [
@@ -219,6 +220,8 @@ export default function Tracking() {
   const animRef = useRef<number | null>(null);
   const simTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [simActive, setSimActive] = useState(false);
+  const simProgressRef = useRef(0);
+  const simHoldRef = useRef(0);
 
   /* ---------- LOAD BOOKING + TIMELINE ---------- */
 
@@ -588,15 +591,27 @@ export default function Tracking() {
         simTimer.current = null;
       }
       setSimActive(false);
+      simProgressRef.current = 0;
+      simHoldRef.current = 0;
       return;
     }
 
     if (simTimer.current) return; // already running
 
     setSimActive(true);
-    let progress = 0;
-    const stepCount = 200; // points along the route
+    const stepCount = 240; // points along the route
     const totalSegments = Math.max(1, routeCoords.length - 1);
+    const transport = (booking?.transport_mode || "").toLowerCase();
+    const speedByMode: Record<string, number> = {
+      sea: 0.6,
+      ocean: 0.6,
+      ship: 0.6,
+      air: 2.4,
+      road: 1.0,
+      rail: 0.9,
+    };
+    const speed = speedByMode[transport] ?? 1.0;
+    const hubStops = new Set([Math.floor(stepCount * 0.33), Math.floor(stepCount * 0.66)]);
 
     simTimer.current = setInterval(() => {
       if (gps) {
@@ -608,7 +623,16 @@ export default function Tracking() {
         return;
       }
 
-      const t = (progress % stepCount) / (stepCount - 1);
+      if (simHoldRef.current > 0) {
+        simHoldRef.current -= 1;
+        return;
+      }
+
+      if (hubStops.has(Math.floor(simProgressRef.current))) {
+        simHoldRef.current = 4; // pause at hub
+      }
+
+      const t = (simProgressRef.current % stepCount) / (stepCount - 1);
       const segFloat = t * totalSegments;
       const segIdx = Math.min(totalSegments - 1, Math.floor(segFloat));
       const segT = segFloat - segIdx;
@@ -619,8 +643,8 @@ export default function Tracking() {
       const simPoint = { lat, lng, timestamp: new Date().toISOString() };
       setDisplayGps(simPoint);
       setLivePath((prev) => [...prev.slice(-99), { lat, lng }]);
-      progress += 1;
-    }, 800);
+      simProgressRef.current = (simProgressRef.current + speed) % stepCount;
+    }, 900);
 
     return () => {
       if (simTimer.current) {
@@ -628,8 +652,10 @@ export default function Tracking() {
         simTimer.current = null;
       }
       setSimActive(false);
+      simProgressRef.current = 0;
+      simHoldRef.current = 0;
     };
-  }, [gps, routeCoords]);
+  }, [booking?.transport_mode, gps, routeCoords]);
 
   /* ---------------- UI ---------------- */
 
@@ -718,7 +744,7 @@ export default function Tracking() {
                     radius={10}
                     pathOptions={{ color: "#22c55e", fillColor: "#22c55e", fillOpacity: 0.2 }}
                   />
-                  <Marker position={[displayGps.lat, displayGps.lng]} icon={mapMarkerIcon}>
+                  <Marker position={[displayGps.lat, displayGps.lng]} {...mapMarkerProps}>
                     <Popup>
                       <div className="space-y-1">
                         <div className="font-semibold">Container Location</div>
@@ -773,7 +799,7 @@ export default function Tracking() {
                     style={{ height: "100%", width: "100%" }}
                   >
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    <Marker position={[routeCoords[0].lat, routeCoords[0].lng]} icon={mapMarkerIcon}>
+                    <Marker position={[routeCoords[0].lat, routeCoords[0].lng]} {...mapMarkerProps}>
                       <Popup>
                         <b>{routeCoords[0].label}</b>
                         <br />
@@ -791,7 +817,7 @@ export default function Tracking() {
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     {routeCoords.length > 1 && (
                       <>
-                        <Marker position={[routeCoords[0].lat, routeCoords[0].lng]} icon={mapMarkerIcon}>
+                        <Marker position={[routeCoords[0].lat, routeCoords[0].lng]} {...mapMarkerProps}>
                           <Popup>
                             <b>Origin</b>
                             <br />
@@ -800,7 +826,7 @@ export default function Tracking() {
                             <small className="text-xs text-muted-foreground">{routeCoords[0].lat.toFixed(6)}, {routeCoords[0].lng.toFixed(6)}</small>
                           </Popup>
                         </Marker>
-                        <Marker position={[routeCoords[routeCoords.length - 1].lat, routeCoords[routeCoords.length - 1].lng]} icon={mapMarkerIcon}>
+                        <Marker position={[routeCoords[routeCoords.length - 1].lat, routeCoords[routeCoords.length - 1].lng]} {...mapMarkerProps}>
                           <Popup>
                             <b>Destination</b>
                             <br />
