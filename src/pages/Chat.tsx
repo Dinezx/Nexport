@@ -345,11 +345,11 @@ Open Nexport to reply.`,
 
   return (
     <DashboardLayout userType={user?.role === "provider" ? "provider" : "exporter"}>
-      <div className="h-[calc(100vh-6rem)] flex rounded-xl border bg-zinc-950 overflow-hidden">
+      <div className="chat-font h-[calc(100vh-6rem)] flex rounded-2xl border border-zinc-800/70 chat-surface shadow-[0_20px_80px_rgba(0,0,0,0.45)] overflow-hidden">
 
         {/* ——— Conversation Sidebar ——— */}
-        <div className="w-80 border-r flex flex-col bg-zinc-900/50">
-          <div className="p-4 border-b">
+        <div className="w-80 border-r border-zinc-800/60 flex flex-col bg-zinc-950/60 backdrop-blur">
+          <div className="p-4 border-b border-zinc-800/60">
             <h3 className="font-semibold text-white flex items-center gap-2">
               <MessageSquare className="h-4 w-4" />
               Conversations
@@ -378,8 +378,9 @@ Open Nexport to reply.`,
                   key={conv.id}
                   onClick={() => selectConversation(conv)}
                   className={cn(
-                    "w-full text-left p-4 border-b border-zinc-800 hover:bg-zinc-800/70 transition-colors",
-                    conversation?.id === conv.id && "bg-zinc-800 border-l-2 border-l-primary"
+                    "mx-3 my-2 w-[calc(100%-1.5rem)] rounded-xl border border-zinc-800/60 p-3 text-left transition-all",
+                    "hover:bg-zinc-800/60 hover:shadow-[0_8px_20px_rgba(0,0,0,0.25)]",
+                    conversation?.id === conv.id && "bg-zinc-800/80 border-primary/60 shadow-[0_0_0_1px_rgba(250,204,21,0.35)]"
                   )}
                 >
                   <div className="flex items-center justify-between mb-1">
@@ -399,12 +400,12 @@ Open Nexport to reply.`,
                     )}
                   </div>
                   {conv.last_message && (
-                    <p className="text-xs text-zinc-500 truncate">
+                    <p className="text-xs text-zinc-400 truncate">
                       {conv.last_message}
                     </p>
                   )}
                   {conv.last_message_at && (
-                    <p className="text-[10px] text-zinc-600 mt-1">
+                    <p className="text-[10px] text-zinc-500 mt-1">
                       {new Date(conv.last_message_at).toLocaleDateString()} {new Date(conv.last_message_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </p>
                   )}
@@ -417,10 +418,10 @@ Open Nexport to reply.`,
         {/* ——— Chat Area ——— */}
         <div className="flex-1 flex flex-col min-h-full">
           {/* Header with Mode Tabs */}
-          <div className="border-b">
+          <div className="border-b border-zinc-800/60 bg-zinc-950/70 backdrop-blur">
             <div className="p-4 flex justify-between items-center">
               <div>
-                <h3 className="font-semibold text-white">
+                <h3 className="font-semibold text-white tracking-tight">
                   {conversation ? formatRoute(conversation as ConversationWithDetails) : "NEXPORT Chat"}
                 </h3>
                 <span className="text-xs text-zinc-500">
@@ -455,7 +456,7 @@ Open Nexport to reply.`,
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-auto p-4 space-y-4 bg-zinc-900/40">
+          <div className="flex-1 overflow-auto p-5 space-y-4 bg-[radial-gradient(circle_at_20%_20%,rgba(250,204,21,0.06),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(59,130,246,0.08),transparent_40%)]">
             {!conversation && (
               <div className="h-full flex flex-col items-center justify-center text-zinc-500">
                 <MessageSquare className="h-12 w-12 mb-3 text-zinc-700" />
@@ -497,14 +498,14 @@ Open Nexport to reply.`,
                     <User className="h-4 w-4 text-zinc-300" />
                   )}
                 </div>
-                <div className="flex flex-col gap-1 max-w-[70%]">
+                <div className="flex flex-col gap-1 max-w-[72%]">
                   <div className={cn(
-                    "px-4 py-2 rounded-lg transition-shadow duration-200 group-hover:shadow-md",
+                    "px-4 py-3 rounded-2xl transition-shadow duration-200 group-hover:shadow-[0_10px_24px_rgba(0,0,0,0.35)]",
                     msg.sender_role === "system" ? "bg-zinc-800/50 border border-zinc-700" :
-                    msg.sender_role === "ai" ? "bg-zinc-800 border border-primary/20" :
+                    msg.sender_role === "ai" ? "bg-zinc-900 border border-primary/20" :
                     msg.sender_role === "provider" ? "bg-blue-900/20 border border-blue-800/30" :
-                    isOwnMessage(msg) ? "bg-primary/20 border border-primary/30" :
-                    "bg-zinc-800"
+                    isOwnMessage(msg) ? "bg-primary/15 border border-primary/30 text-zinc-900" :
+                    "bg-zinc-900/70 border border-zinc-800/60"
                   )}>
                     {msg.sender_role === "system" && (
                       <span className="text-[10px] text-zinc-500 block mb-1">System</span>
@@ -515,7 +516,12 @@ Open Nexport to reply.`,
                     {msg.sender_role === "provider" && (
                       <span className="text-[10px] text-blue-400 block mb-1">Provider</span>
                     )}
-                    <p className="text-sm text-zinc-100 whitespace-pre-wrap">{msg.content}</p>
+                    <p className={cn(
+                      "text-sm whitespace-pre-wrap",
+                      isOwnMessage(msg) ? "text-zinc-900" : "text-zinc-100"
+                    )}>
+                      {msg.content}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-zinc-500 px-1">
                     <Clock className="h-3 w-3" />
@@ -565,7 +571,7 @@ Open Nexport to reply.`,
           </div>
 
           {/* Input */}
-          <div className="p-4 border-t flex gap-2">
+          <div className="p-4 border-t border-zinc-800/60 bg-zinc-950/70 backdrop-blur flex gap-2">
             <Button variant="ghost" size="icon" disabled={loading || !conversation || !rateLimitStatus?.allowed}>
               <Paperclip />
             </Button>
@@ -584,12 +590,12 @@ Open Nexport to reply.`,
                   : "Message the provider..."
               }
               disabled={loading || !conversation || !rateLimitStatus?.allowed}
-              className="disabled:opacity-50"
+              className="bg-zinc-900/70 border-zinc-800/60 text-zinc-100 placeholder:text-zinc-500 disabled:opacity-50"
             />
             <Button
               onClick={sendMessage}
               disabled={loading || !conversation || !rateLimitStatus?.allowed || !text.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-primary text-zinc-900 hover:bg-yellow-400"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
