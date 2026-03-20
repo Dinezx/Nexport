@@ -306,7 +306,7 @@ export default function ProviderDashboard() {
             <h1 className="text-3xl font-bold text-foreground">Provider Dashboard</h1>
             <p className="text-muted-foreground">Manage your containers and shipments with live data.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap xl:justify-end xl:ml-auto xl:pr-12">
+          <div className="flex flex-wrap items-center gap-3 xl:flex-nowrap xl:justify-end xl:ml-auto">
             <Button
               variant="outline"
               size="sm"

@@ -250,7 +250,7 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
           collapsed ? "ml-16" : "ml-64"
         )}
       >
-        <div className="absolute right-6 top-6 z-30">
+        <div className="absolute right-6 top-24 z-30">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="relative rounded-full border border-border bg-card p-2 text-muted-foreground shadow-sm hover:text-foreground">
