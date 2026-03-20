@@ -15,6 +15,15 @@ export type NotificationItem = {
     created_at: string;
 };
 
+export type NotificationPreferences = {
+    user_id: string;
+    email_enabled: boolean;
+    sms_enabled: boolean;
+    whatsapp_enabled: boolean;
+    operational_enabled: boolean;
+    payouts_enabled: boolean;
+};
+
 export async function createNotification(payload: NotificationPayload) {
     const { user_id, message, type } = payload;
     if (!user_id) return null;
@@ -64,6 +73,26 @@ export async function markAllNotificationsRead(userId: string) {
         .update({ read: true })
         .eq("user_id", userId)
         .eq("read", false);
+
+    if (error) throw error;
+}
+
+export async function fetchNotificationPreferences(userId: string) {
+    if (!userId) return null as NotificationPreferences | null;
+    const { data, error } = await supabase
+        .from("notification_preferences")
+        .select("user_id, email_enabled, sms_enabled, whatsapp_enabled, operational_enabled, payouts_enabled")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+    if (error) throw error;
+    return (data || null) as NotificationPreferences | null;
+}
+
+export async function upsertNotificationPreferences(prefs: NotificationPreferences) {
+    const { error } = await supabase
+        .from("notification_preferences")
+        .upsert(prefs, { onConflict: "user_id" });
 
     if (error) throw error;
 }

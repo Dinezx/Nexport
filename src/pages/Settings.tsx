@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { isSupabaseReachable } from "@/lib/offlineAuth";
+import { upsertNotificationPreferences } from "@/services/notificationService";
 
 type UserRole = "exporter" | "provider" | "admin";
 
@@ -176,6 +177,24 @@ export default function Settings() {
             },
           });
         }
+
+        const { data: notifPrefs } = await supabase
+          .from("notification_preferences")
+          .select("email_enabled, sms_enabled, whatsapp_enabled, operational_enabled, payouts_enabled")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (notifPrefs) {
+          nextForm = mergeSettings(nextForm, {
+            notifications: {
+              email: !!notifPrefs.email_enabled,
+              sms: !!notifPrefs.sms_enabled,
+              whatsapp: !!notifPrefs.whatsapp_enabled,
+              operational: !!notifPrefs.operational_enabled,
+              payouts: !!notifPrefs.payouts_enabled,
+            },
+          });
+        }
       }
     }
 
@@ -204,6 +223,15 @@ export default function Settings() {
             },
             { onConflict: "id" }
           );
+
+          await upsertNotificationPreferences({
+            user_id: user.id,
+            email_enabled: form.notifications.email,
+            sms_enabled: form.notifications.sms,
+            whatsapp_enabled: form.notifications.whatsapp,
+            operational_enabled: form.notifications.operational,
+            payouts_enabled: form.notifications.payouts,
+          });
         }
       }
 

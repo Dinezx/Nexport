@@ -36,7 +36,7 @@ import {
   ConversationWithDetails,
 } from "@/services/chatService";
 import { supabase } from "@/lib/supabase";
-import { createNotification } from "@/services/notificationService";
+import { createNotification, fetchNotificationPreferences } from "@/services/notificationService";
 import { sendEmail } from "@/services/emailService";
 
 type SenderRole = "exporter" | "provider" | "ai" | "system";
@@ -233,22 +233,25 @@ export default function Chat() {
         }
 
         try {
-          const { data: recipientProfile } = await supabase
-            .from("profiles")
-            .select("email, name")
-            .eq("id", recipientId)
-            .maybeSingle();
+          const prefs = await fetchNotificationPreferences(recipientId).catch(() => null);
+          if (prefs?.email_enabled !== false) {
+            const { data: recipientProfile } = await supabase
+              .from("profiles")
+              .select("email, name")
+              .eq("id", recipientId)
+              .maybeSingle();
 
-          if (recipientProfile?.email) {
-            await sendEmail({
-              to: recipientProfile.email,
-              subject: `New message from ${senderRole === "exporter" ? "Exporter" : "Provider"}`,
-              text: `You received a new message on ${routeLabel}.
+            if (recipientProfile?.email) {
+              await sendEmail({
+                to: recipientProfile.email,
+                subject: `New message from ${senderRole === "exporter" ? "Exporter" : "Provider"}`,
+                text: `You received a new message on ${routeLabel}.
 
 ${messageText}
 
 Open Nexport to reply.`,
-            });
+              });
+            }
           }
         } catch (err) {
           console.warn("Message email failed", err);
