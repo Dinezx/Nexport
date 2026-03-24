@@ -208,11 +208,30 @@ export async function fetchAllConversations(userId: string): Promise<Conversatio
 
   // Fallback: build conversations from user's bookings when conversations table is empty/blocked by RLS
   try {
-    const { data: bookings } = await supabase
+    const { data: exporterBookings } = await supabase
       .from("bookings")
       .select("id, origin, destination, status, container_id, exporter_id, created_at, transport_mode, cargo_type, cargo_weight, price, allocated_cbm, container_number")
       .eq("exporter_id", userId)
       .order("created_at", { ascending: false });
+
+    let bookings = exporterBookings || [];
+
+    if (!bookings.length) {
+      const { data: providerContainers } = await supabase
+        .from("containers")
+        .select("id")
+        .eq("provider_id", userId);
+
+      const containerIds = (providerContainers || []).map((c: { id: string }) => c.id);
+      if (containerIds.length) {
+        const { data: providerBookings } = await supabase
+          .from("bookings")
+          .select("id, origin, destination, status, container_id, exporter_id, created_at, transport_mode, cargo_type, cargo_weight, price, allocated_cbm, container_number")
+          .in("container_id", containerIds)
+          .order("created_at", { ascending: false });
+        bookings = providerBookings || [];
+      }
+    }
 
     if (bookings && bookings.length > 0) {
       // Cache bookings in localStorage so offline AI generators can access them

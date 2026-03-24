@@ -70,6 +70,7 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const isDashboardPage = /\/dashboard$/.test(location.pathname);
 
   /* ------------------ AUTH GUARD (FIXED) ------------------ */
 
@@ -250,52 +251,54 @@ export function DashboardLayout({ children, userType }: DashboardLayoutProps) {
           collapsed ? "ml-16" : "ml-64"
         )}
       >
-        <div className="absolute right-6 top-24 z-30">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="relative rounded-full border border-border bg-card p-2 text-muted-foreground shadow-sm hover:text-foreground">
-                <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel className="flex items-center justify-between">
-                Notifications
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllRead}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    Mark all read
-                  </button>
-                )}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {notifications.length === 0 ? (
-                <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-                  No new notifications
-                </div>
-              ) : (
-                notifications.map((n) => (
-                  <DropdownMenuItem
-                    key={n.id}
-                    className={cn("flex flex-col items-start gap-1", !n.read && "bg-muted/60")}
-                    onClick={() => handleMarkRead(n.id)}
-                  >
-                    <span className="text-sm text-foreground">{n.message}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(n.created_at).toLocaleString()}
+        {isDashboardPage && (
+          <div className="absolute right-6 top-24 z-30">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="relative rounded-full border border-border bg-card p-2 text-muted-foreground shadow-sm hover:text-foreground">
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                      {unreadCount}
                     </span>
-                  </DropdownMenuItem>
-                ))
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuLabel className="flex items-center justify-between">
+                  Notifications
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {notifications.length === 0 ? (
+                  <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    No new notifications
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <DropdownMenuItem
+                      key={n.id}
+                      className={cn("flex flex-col items-start gap-1", !n.read && "bg-muted/60")}
+                      onClick={() => handleMarkRead(n.id)}
+                    >
+                      <span className="text-sm text-foreground">{n.message}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(n.created_at).toLocaleString()}
+                      </span>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
         <div className="p-6 page-enter">{children}</div>
       </main>
     </div>
